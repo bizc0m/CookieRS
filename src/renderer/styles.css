@@ -112,6 +112,12 @@ button {
   transition: transform 140ms ease, background 140ms ease;
 }
 
+.workspace-button img {
+  width: 66%;
+  height: 66%;
+  object-fit: contain;
+}
+
 body:not(.density-normal) .workspace-button,
 body:not(.density-normal) .add-workspace {
   width: calc(44px * var(--ui-scale));
@@ -243,6 +249,28 @@ body:not(.density-normal) .brand-subtitle {
   font-weight: 650;
 }
 
+.mini-toggle {
+  min-height: calc(27px * var(--ui-scale));
+  border: 1px solid var(--line);
+  border-radius: calc(9px * var(--ui-scale));
+  padding: 0 calc(9px * var(--ui-scale));
+  color: var(--ink);
+  background: var(--surface);
+  font-size: calc(11px * var(--ui-scale));
+  font-weight: 760;
+}
+
+.mini-toggle.active {
+  color: white;
+  background: var(--accent);
+}
+
+.json-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: calc(6px * var(--ui-scale));
+}
+
 .sidebar-section {
   padding: calc(12px * var(--ui-scale)) calc(12px * var(--ui-scale)) 0;
 }
@@ -300,6 +328,10 @@ body:not(.density-normal) .app-button {
 .app-button.active {
   background: var(--surface);
   box-shadow: var(--shadow);
+}
+
+.app-button.hidden-app {
+  opacity: 0.52;
 }
 
 .app-icon {

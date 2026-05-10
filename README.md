@@ -41,6 +41,17 @@ npm run dev
 - Masquer/afficher les onglets secrets : `Cmd/Ctrl+Shift+H`
 - Partage du texte sélectionné + URL : copier, X, LinkedIn, Buffer, mail
 
+## Fonctions du lot 4
+
+- Compteur basé sur les notifications de sites via l'API `Notification`, avec fallback titre `(N)`
+- Apps cachées et affichage temporaire des apps cachées
+- Drag and drop des groupes de la colonne 1
+- Drag and drop des apps de la colonne 2
+- Couleur assignable aux apps et groupes
+- Icône image URL possible pour les groupes
+- Export de configuration au format JSON
+- Import de configuration JSON
+
 ## Compiler
 
 ```bash

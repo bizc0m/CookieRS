@@ -13,6 +13,7 @@ const starterState = {
   skin: "biscuit",
   sidebarCollapsed: false,
   secretsHidden: false,
+  showHiddenApps: false,
   workspaces: [
     { id: "work", name: "Work", icon: "W", color: "#e16f43" },
     { id: "personal", name: "Personal", icon: "P", color: "#f8f3ea" }
@@ -54,6 +55,7 @@ function migrateState(input) {
   next.skin ||= "biscuit";
   next.sidebarCollapsed = Boolean(next.sidebarCollapsed);
   next.secretsHidden = Boolean(next.secretsHidden);
+  next.showHiddenApps = Boolean(next.showHiddenApps);
   next.workspaces = (next.workspaces || starterState.workspaces).map((workspace, index) => ({
     color: index === 0 ? "#e16f43" : "#f8f3ea",
     ...workspace
@@ -62,6 +64,7 @@ function migrateState(input) {
     next.appsByWorkspace[workspaceId] = next.appsByWorkspace[workspaceId].map((app) => ({
       notifications: true,
       notificationCount: 0,
+      hidden: false,
       color: "#e16f43",
       ...app
     }));
@@ -114,8 +117,13 @@ function activeApps() {
   return state.appsByWorkspace[state.activeWorkspaceId] || [];
 }
 
-function activeApp() {
+function visibleApps() {
   const apps = activeApps();
+  return state.showHiddenApps ? apps : apps.filter((app) => !app.hidden);
+}
+
+function activeApp() {
+  const apps = visibleApps();
   const id = state.activeAppByWorkspace[state.activeWorkspaceId] || apps[0]?.id;
   return apps.find((app) => app.id === id) || apps[0];
 }
@@ -269,6 +277,14 @@ function toggleSecretsHidden() {
   render();
 }
 
+function toggleHiddenApps() {
+  state.showHiddenApps = !state.showHiddenApps;
+  const app = activeApp();
+  if (app) state.activeAppByWorkspace[state.activeWorkspaceId] = app.id;
+  saveState();
+  render();
+}
+
 function addCustomApp({ name, url }) {
   const normalized = normalizeUrl(url);
   const id = `${String(name).toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`;
@@ -278,7 +294,8 @@ function addCustomApp({ name, url }) {
     url: normalized,
     color: "#e16f43",
     notifications: true,
-    notificationCount: 0
+    notificationCount: 0,
+    hidden: false
   };
   state.appsByWorkspace[state.activeWorkspaceId] = [...activeApps(), app];
   state.activeAppByWorkspace[state.activeWorkspaceId] = id;
@@ -296,10 +313,23 @@ function updateAppProperties(appId, formData) {
   app.color = String(formData.get("color") || app.color);
   app.notifications = formData.get("notifications") === "on";
   app.notificationCount = Number(formData.get("notificationCount") || 0);
+  app.hidden = formData.get("hidden") === "on";
   const homeTab = tabsFor(app.id)[0];
   homeTab.title = app.name;
   homeTab.url = app.url;
   propertiesAppId = null;
+  saveState();
+  render();
+}
+
+function toggleAppHidden(appId) {
+  const app = findApp(appId);
+  if (!app) return;
+  app.hidden = !app.hidden;
+  if (app.hidden && state.activeAppByWorkspace[state.activeWorkspaceId] === appId) {
+    const next = visibleApps().find((item) => item.id !== appId);
+    if (next) state.activeAppByWorkspace[state.activeWorkspaceId] = next.id;
+  }
   saveState();
   render();
 }
@@ -309,6 +339,7 @@ function updateWorkspaceProperties(workspaceId, formData) {
   if (!workspace) return;
   workspace.name = String(formData.get("name") || workspace.name).trim();
   workspace.icon = String(formData.get("icon") || workspace.icon).trim().slice(0, 2).toUpperCase();
+  workspace.iconImage = String(formData.get("iconImage") || "").trim();
   workspace.color = String(formData.get("color") || workspace.color);
   propertiesWorkspaceId = null;
   saveState();
@@ -319,6 +350,7 @@ function duplicateApp(appId) {
   const app = findApp(appId);
   if (!app) return;
   const copy = { ...app, id: `${app.id}-copy-${Date.now()}`, name: `${app.name} 2` };
+  copy.hidden = false;
   state.appsByWorkspace[state.activeWorkspaceId] = [...activeApps(), copy];
   state.tabsByApp[copy.id] = [{ id: `${copy.id}-home`, title: copy.name, url: copy.url, secret: false }];
   selectApp(copy.id);
@@ -333,6 +365,58 @@ function deleteApp(appId) {
   activeTabId = visibleTabsFor(state.activeAppByWorkspace[state.activeWorkspaceId])[0]?.id || null;
   saveState();
   render();
+}
+
+function moveWorkspace(sourceId, targetId) {
+  if (sourceId === targetId) return;
+  const sourceIndex = state.workspaces.findIndex((workspace) => workspace.id === sourceId);
+  const targetIndex = state.workspaces.findIndex((workspace) => workspace.id === targetId);
+  if (sourceIndex < 0 || targetIndex < 0) return;
+  const [item] = state.workspaces.splice(sourceIndex, 1);
+  state.workspaces.splice(targetIndex, 0, item);
+  saveState();
+  render();
+}
+
+function moveApp(sourceId, targetId) {
+  if (sourceId === targetId) return;
+  const apps = activeApps();
+  const sourceIndex = apps.findIndex((app) => app.id === sourceId);
+  const targetIndex = apps.findIndex((app) => app.id === targetId);
+  if (sourceIndex < 0 || targetIndex < 0) return;
+  const [item] = apps.splice(sourceIndex, 1);
+  apps.splice(targetIndex, 0, item);
+  state.appsByWorkspace[state.activeWorkspaceId] = apps;
+  saveState();
+  render();
+}
+
+function exportConfig() {
+  const payload = JSON.stringify(state, null, 2);
+  const blob = new Blob([payload], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `cookiers-config-${new Date().toISOString().slice(0, 10)}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function importConfig(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const imported = JSON.parse(String(reader.result || ""));
+      state = migrateState(imported);
+      activeTabId = null;
+      saveState();
+      render();
+    } catch {
+      alert("JSON config invalide.");
+    }
+  };
+  reader.readAsText(file);
 }
 
 function iconText(name) {
@@ -355,6 +439,40 @@ function densityLabel(value) {
 function notificationBadge(app) {
   if (!app.notifications || !app.notificationCount) return "";
   return `<span class="notification-badge">${app.notificationCount > 99 ? "99+" : app.notificationCount}</span>`;
+}
+
+function incrementNotification(appId) {
+  const app = findApp(appId);
+  if (!app || !app.notifications) return;
+  app.notificationCount = Number(app.notificationCount || 0) + 1;
+  saveState();
+  render();
+}
+
+function installNotificationHook(webview) {
+  const script = `
+    (() => {
+      if (window.__cookiersNotificationHooked || !window.Notification) return;
+      window.__cookiersNotificationHooked = true;
+      const NativeNotification = window.Notification;
+      const report = (payload) => {
+        try {
+          console.info("__COOKIERS_NOTIFICATION__" + JSON.stringify(payload || {}));
+        } catch {}
+      };
+      function WrappedNotification(title, options) {
+        report({ title: String(title || ""), body: String((options && options.body) || "") });
+        return new NativeNotification(title, options);
+      }
+      WrappedNotification.permission = NativeNotification.permission;
+      WrappedNotification.requestPermission = (...args) => NativeNotification.requestPermission(...args);
+      WrappedNotification.prototype = NativeNotification.prototype;
+      try {
+        Object.defineProperty(window, "Notification", { configurable: true, writable: true, value: WrappedNotification });
+      } catch {}
+    })();
+  `;
+  webview.executeJavaScript(script).catch(() => {});
 }
 
 function parseNotificationCount(title) {
@@ -423,8 +541,8 @@ function render() {
         ${state.workspaces
           .map(
             (item, index) => `
-              <button class="workspace-button ${item.id === workspace.id ? "active" : ""}" data-workspace="${item.id}" title="${escapeHtml(item.name)} - Cmd/Ctrl+${index + 1}" style="background:${item.id === workspace.id ? "var(--accent)" : escapeHtml(item.color)}">
-                ${escapeHtml(item.icon)}
+              <button class="workspace-button ${item.id === workspace.id ? "active" : ""}" draggable="true" data-workspace="${item.id}" title="${escapeHtml(item.name)} - Cmd/Ctrl+${index + 1}" style="background:${item.id === workspace.id ? "var(--accent)" : escapeHtml(item.color)}">
+                ${item.iconImage ? `<img src="${escapeHtml(item.iconImage)}" alt="" />` : escapeHtml(item.icon)}
               </button>
             `
           )
@@ -466,6 +584,15 @@ function render() {
               <option value="mono" ${state.skin === "mono" ? "selected" : ""}>Mono</option>
             </select>
           </div>
+          <div class="control-row">
+            <span>Cachés</span>
+            <button class="mini-toggle ${state.showHiddenApps ? "active" : ""}" data-toggle-hidden-apps title="Afficher apps cachées">${state.showHiddenApps ? "ON" : "OFF"}</button>
+          </div>
+          <div class="json-actions">
+            <button class="mini-toggle" data-export-config>Export JSON</button>
+            <button class="mini-toggle" data-import-config>Import JSON</button>
+            <input type="file" data-import-config-file accept="application/json" hidden />
+          </div>
         </section>
 
         <section class="sidebar-section">
@@ -478,7 +605,7 @@ function render() {
               .map((item) => {
                 const favicon = faviconUrl(item.url);
                 return `
-                  <button class="app-button ${app?.id === item.id ? "active" : ""}" data-app="${item.id}" data-menu-app="${item.id}" title="${escapeHtml(item.name)}">
+                  <button class="app-button ${app?.id === item.id ? "active" : ""} ${item.hidden ? "hidden-app" : ""}" draggable="true" data-app="${item.id}" data-menu-app="${item.id}" title="${escapeHtml(item.name)}">
                     <span class="app-icon-wrap">
                       <span class="app-icon" style="background:${escapeHtml(item.color)}">
                         ${favicon ? `<img src="${favicon}" alt="" />` : escapeHtml(iconText(item.name))}
@@ -489,7 +616,7 @@ function render() {
                       <span class="app-name">${escapeHtml(item.name)}</span>
                       <span class="app-url">${escapeHtml(item.url.replace(/^https?:\/\//, ""))}</span>
                     </span>
-                    <span class="notification-dot ${item.notifications ? "" : "off"}" title="${item.notifications ? "Notifications autorisées" : "Notifications coupées"}"></span>
+                    <span class="notification-dot ${item.notifications ? "" : "off"}" title="${item.notifications ? "Notifications sites autorisées" : "Notifications coupées"}"></span>
                   </button>
                 `;
               })
@@ -548,6 +675,7 @@ function render() {
                           src="${escapeHtml(item.url)}"
                           partition="${partitionFor(workspace.id, app.id, item)}"
                           data-tab-id="${item.id}"
+                          data-app-id="${app.id}"
                           allowpopups
                         ></webview>
                       `
@@ -614,6 +742,7 @@ function renderPropertiesModal(active) {
         <div class="field"><label for="prop-color">Couleur</label><input id="prop-color" name="color" value="${escapeHtml(app.color)}" /></div>
         <div class="field"><label for="prop-count">Compteur notifications</label><input id="prop-count" name="notificationCount" type="number" min="0" value="${Number(app.notificationCount || 0)}" /></div>
         <label class="check-row"><input type="checkbox" name="notifications" ${app.notifications ? "checked" : ""} /> Notifications pour cette app</label>
+        <label class="check-row"><input type="checkbox" name="hidden" ${app.hidden ? "checked" : ""} /> App cachée</label>
         <div class="modal-actions split">
           <button type="button" class="danger" data-delete-app="${app.id}">Supprimer</button>
           <span></span>
@@ -638,6 +767,7 @@ function renderWorkspaceModal() {
         </div>
         <div class="field"><label for="workspace-name">Nom</label><input id="workspace-name" name="name" value="${escapeHtml(workspace.name)}" required /></div>
         <div class="field"><label for="workspace-icon">Icône texte</label><input id="workspace-icon" name="icon" value="${escapeHtml(workspace.icon)}" maxlength="2" required /></div>
+        <div class="field"><label for="workspace-icon-image">Icône image URL</label><input id="workspace-icon-image" name="iconImage" value="${escapeHtml(workspace.iconImage || "")}" placeholder="https://..." /></div>
         <div class="field"><label for="workspace-color">Couleur</label><input id="workspace-color" name="color" value="${escapeHtml(workspace.color)}" /></div>
         <div class="modal-actions">
           <button type="button" class="secondary" data-close-workspace>Annuler</button>
@@ -682,6 +812,7 @@ function renderContextMenu() {
       <button data-context-action="properties">Propriétés</button>
       <button data-context-action="duplicate">Dupliquer</button>
       <button data-context-action="notifications">${app.notifications ? "Couper notifications" : "Activer notifications"}</button>
+      <button data-context-action="hidden">${app.hidden ? "Afficher" : "Cacher"}</button>
       <button data-context-action="clear-count">Reset compteur</button>
       <button data-context-action="delete" class="danger-text">Supprimer</button>
     </div>
@@ -702,6 +833,14 @@ function renderWorkspaceMenu() {
 function wireEvents() {
   document.querySelectorAll("[data-workspace]").forEach((button) => {
     button.addEventListener("click", () => selectWorkspace(button.dataset.workspace));
+    button.addEventListener("dragstart", (event) => {
+      event.dataTransfer.setData("text/cookiers-workspace", button.dataset.workspace);
+    });
+    button.addEventListener("dragover", (event) => event.preventDefault());
+    button.addEventListener("drop", (event) => {
+      event.preventDefault();
+      moveWorkspace(event.dataTransfer.getData("text/cookiers-workspace"), button.dataset.workspace);
+    });
     button.addEventListener("contextmenu", (event) => {
       event.preventDefault();
       workspaceMenu = { workspaceId: button.dataset.workspace, x: event.clientX, y: event.clientY };
@@ -716,11 +855,27 @@ function wireEvents() {
   });
 
   document.querySelector("[data-toggle-sidebar]")?.addEventListener("click", toggleSidebar);
+  document.querySelector("[data-toggle-hidden-apps]")?.addEventListener("click", toggleHiddenApps);
+  document.querySelector("[data-export-config]")?.addEventListener("click", exportConfig);
+  document.querySelector("[data-import-config]")?.addEventListener("click", () => {
+    document.querySelector("[data-import-config-file]")?.click();
+  });
+  document.querySelector("[data-import-config-file]")?.addEventListener("change", (event) => {
+    importConfig(event.target.files?.[0]);
+  });
   document.querySelectorAll("[data-density]").forEach((button) => button.addEventListener("click", () => setDensity(button.dataset.density)));
   document.querySelector("[data-skin]")?.addEventListener("change", (event) => setSkin(event.target.value));
 
   document.querySelectorAll("[data-app]").forEach((button) => {
     button.addEventListener("click", () => selectApp(button.dataset.app));
+    button.addEventListener("dragstart", (event) => {
+      event.dataTransfer.setData("text/cookiers-app", button.dataset.app);
+    });
+    button.addEventListener("dragover", (event) => event.preventDefault());
+    button.addEventListener("drop", (event) => {
+      event.preventDefault();
+      moveApp(event.dataTransfer.getData("text/cookiers-app"), button.dataset.app);
+    });
     button.addEventListener("contextmenu", (event) => {
       event.preventDefault();
       contextMenu = { appId: button.dataset.app, x: event.clientX, y: event.clientY };
@@ -769,9 +924,15 @@ function wireEvents() {
   });
 
   document.querySelectorAll("webview").forEach((webview) => {
+    webview.addEventListener("dom-ready", () => installNotificationHook(webview));
     webview.addEventListener("did-navigate", () => syncWebview(webview));
     webview.addEventListener("did-navigate-in-page", () => syncWebview(webview));
     webview.addEventListener("page-title-updated", (event) => updateWebviewTitle(webview, event.title));
+    webview.addEventListener("console-message", (event) => {
+      if (String(event.message || "").startsWith("__COOKIERS_NOTIFICATION__")) {
+        incrementNotification(webview.dataset.appId);
+      }
+    });
   });
 
   wireAddModal();
@@ -902,6 +1063,7 @@ function wireContextMenu() {
         closeMenus();
         render();
       }
+      if (action === "hidden") toggleAppHidden(contextMenu.appId);
       if (action === "clear-count") {
         app.notificationCount = 0;
         saveState();
