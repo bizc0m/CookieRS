@@ -68,10 +68,13 @@ npm run dev
 
 ```bash
 npm run pack
+npm run pack:clickable
 npm run build:mac
 npm run build:win
 npm run build:linux
 ```
+
+La version macOS cliquable est générée dans `dist/mac-arm64/CookieRS.app`.
 
 Le code source est portable Electron. La compilation native finale doit idéalement être lancée sur chaque OS cible ou via CI multi-OS.
 

@@ -1,6 +1,6 @@
 {
   "name": "cookiers",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Open-source Biscuit-like desktop browser for organizing web apps by workspace.",
   "author": "CookieRS contributors",
   "main": "src/main.js",
@@ -10,6 +10,7 @@
     "dev": "electron .",
     "start": "electron .",
     "pack": "electron-builder --dir",
+    "pack:clickable": "electron-builder --dir",
     "build": "electron-builder",
     "build:mac": "electron-builder --mac",
     "build:win": "electron-builder --win",
@@ -18,6 +19,9 @@
   "build": {
     "appId": "dev.cookiers.app",
     "productName": "CookieRS",
+    "asar": true,
+    "compression": "maximum",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "files": [
       "src/**/*",
       "package.json",
