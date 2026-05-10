@@ -52,6 +52,18 @@ npm run dev
 - Export de configuration au format JSON
 - Import de configuration JSON
 
+## Fonctions du lot 5
+
+- Tous les réglages globaux regroupés dans la roue de réglages
+- Panneau paramètres rapproché de l'interface Biscuit/Cookie
+- Sidebar app rapprochée du screenshot : groupe, lignes app, bouton options, footer `+ Groupe`, `OFF`, Donate, `+ App`
+- Highlight couleur autour des groupes et des icônes via sélecteur couleur standard
+- Icônes personnalisées par URL ou upload image pour apps et groupes
+- Skin personnalisé avec couleurs globales du chrome
+- Masquage de l'URL sur l'écran principal
+- Deuxième bouton de la fenêtre avec actions normales, onglet secret, masquage URL, propriétés et partage
+- Documentation source Markdown et Word dans `docs/`
+
 ## Compiler
 
 ```bash

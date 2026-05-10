@@ -11,6 +11,14 @@ const appCatalog = [
 const starterState = {
   density: "normal",
   skin: "biscuit",
+  customSkin: {
+    cream: "#f6f4ee",
+    sidebar: "#eee8de",
+    accent: "#e16f43"
+  },
+  settingsOpen: false,
+  settingsSection: "general",
+  maskUrl: false,
   sidebarCollapsed: false,
   secretsHidden: false,
   showHiddenApps: false,
@@ -37,6 +45,7 @@ let workspaceMenu = null;
 let propertiesAppId = null;
 let propertiesWorkspaceId = null;
 let shareDraft = null;
+let pageMenu = null;
 
 const root = document.getElementById("app");
 
@@ -53,11 +62,17 @@ function migrateState(input) {
   const next = structuredClone(input);
   next.density ||= "normal";
   next.skin ||= "biscuit";
+  next.customSkin ||= starterState.customSkin;
+  next.settingsOpen = Boolean(next.settingsOpen);
+  next.settingsSection ||= "general";
+  next.maskUrl = Boolean(next.maskUrl);
   next.sidebarCollapsed = Boolean(next.sidebarCollapsed);
   next.secretsHidden = Boolean(next.secretsHidden);
   next.showHiddenApps = Boolean(next.showHiddenApps);
   next.workspaces = (next.workspaces || starterState.workspaces).map((workspace, index) => ({
     color: index === 0 ? "#e16f43" : "#f8f3ea",
+    highlightColor: "",
+    iconImage: "",
     ...workspace
   }));
   Object.keys(next.appsByWorkspace || {}).forEach((workspaceId) => {
@@ -65,6 +80,8 @@ function migrateState(input) {
       notifications: true,
       notificationCount: 0,
       hidden: false,
+      iconImage: "",
+      highlightColor: "",
       color: "#e16f43",
       ...app
     }));
@@ -175,6 +192,10 @@ function getActiveTab() {
 
 function applyChromeSettings() {
   document.body.className = `density-${state.density} skin-${state.skin}`;
+  const skin = state.skin === "custom" ? state.customSkin : null;
+  document.body.style.setProperty("--custom-cream", skin?.cream || "");
+  document.body.style.setProperty("--custom-sidebar", skin?.sidebar || "");
+  document.body.style.setProperty("--custom-accent", skin?.accent || "");
 }
 
 function setDensity(density) {
@@ -185,6 +206,42 @@ function setDensity(density) {
 
 function setSkin(skin) {
   state.skin = skin;
+  saveState();
+  render();
+}
+
+function updateCustomSkin(formData) {
+  state.skin = "custom";
+  state.customSkin = {
+    cream: String(formData.get("cream") || state.customSkin.cream),
+    sidebar: String(formData.get("sidebar") || state.customSkin.sidebar),
+    accent: String(formData.get("accent") || state.customSkin.accent)
+  };
+  saveState();
+  render();
+}
+
+function openSettings(section = "general") {
+  state.settingsOpen = true;
+  state.settingsSection = section;
+  saveState();
+  render();
+}
+
+function closeSettings() {
+  state.settingsOpen = false;
+  saveState();
+  render();
+}
+
+function setSettingsSection(section) {
+  state.settingsSection = section;
+  saveState();
+  render();
+}
+
+function toggleMaskUrl() {
+  state.maskUrl = !state.maskUrl;
   saveState();
   render();
 }
@@ -285,6 +342,26 @@ function toggleHiddenApps() {
   render();
 }
 
+function addWorkspace() {
+  const index = state.workspaces.length + 1;
+  const id = `group-${Date.now()}`;
+  const workspace = {
+    id,
+    name: `Groupe ${index}`,
+    icon: String(index).slice(-1),
+    iconImage: "",
+    color: "#f8f3ea",
+    highlightColor: ""
+  };
+  state.workspaces = [...state.workspaces, workspace];
+  state.appsByWorkspace[id] = [];
+  state.activeAppByWorkspace[id] = null;
+  state.activeWorkspaceId = id;
+  propertiesWorkspaceId = id;
+  saveState();
+  render();
+}
+
 function addCustomApp({ name, url }) {
   const normalized = normalizeUrl(url);
   const id = `${String(name).toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`;
@@ -293,6 +370,8 @@ function addCustomApp({ name, url }) {
     name: String(name).trim() || "App",
     url: normalized,
     color: "#e16f43",
+    highlightColor: "",
+    iconImage: "",
     notifications: true,
     notificationCount: 0,
     hidden: false
@@ -311,6 +390,8 @@ function updateAppProperties(appId, formData) {
   app.name = String(formData.get("name") || app.name).trim();
   app.url = normalizeUrl(formData.get("url"));
   app.color = String(formData.get("color") || app.color);
+  app.highlightColor = String(formData.get("highlightColor") || "");
+  app.iconImage = String(formData.get("iconImage") || "").trim();
   app.notifications = formData.get("notifications") === "on";
   app.notificationCount = Number(formData.get("notificationCount") || 0);
   app.hidden = formData.get("hidden") === "on";
@@ -341,6 +422,7 @@ function updateWorkspaceProperties(workspaceId, formData) {
   workspace.icon = String(formData.get("icon") || workspace.icon).trim().slice(0, 2).toUpperCase();
   workspace.iconImage = String(formData.get("iconImage") || "").trim();
   workspace.color = String(formData.get("color") || workspace.color);
+  workspace.highlightColor = String(formData.get("highlightColor") || "");
   propertiesWorkspaceId = null;
   saveState();
   render();
@@ -400,6 +482,13 @@ function exportConfig() {
   link.download = `cookiers-config-${new Date().toISOString().slice(0, 10)}.json`;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+function readIconUpload(file, callback) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => callback(String(reader.result || ""));
+  reader.readAsDataURL(file);
 }
 
 function importConfig(file) {
@@ -523,17 +612,18 @@ function shareTo(target) {
 function closeMenus() {
   contextMenu = null;
   workspaceMenu = null;
+  pageMenu = null;
 }
 
 function render() {
   applyChromeSettings();
   const workspace = activeWorkspace();
-  const apps = activeApps();
+  const apps = visibleApps();
   const app = activeApp();
   const tabs = app ? tabsFor(app.id) : [];
   const visibleTabs = app ? visibleTabsFor(app.id) : [];
   const tab = getActiveTab();
-  const shellClasses = ["shell", state.sidebarCollapsed ? "sidebar-icons" : "", state.secretsHidden ? "secrets-hidden" : ""].filter(Boolean).join(" ");
+  const shellClasses = ["shell", state.sidebarCollapsed ? "sidebar-icons" : "", state.secretsHidden ? "secrets-hidden" : "", state.maskUrl ? "url-masked" : ""].filter(Boolean).join(" ");
 
   root.innerHTML = `
     <main class="${shellClasses}">
@@ -541,7 +631,7 @@ function render() {
         ${state.workspaces
           .map(
             (item, index) => `
-              <button class="workspace-button ${item.id === workspace.id ? "active" : ""}" draggable="true" data-workspace="${item.id}" title="${escapeHtml(item.name)} - Cmd/Ctrl+${index + 1}" style="background:${item.id === workspace.id ? "var(--accent)" : escapeHtml(item.color)}">
+              <button class="workspace-button ${item.id === workspace.id ? "active" : ""}" draggable="true" data-workspace="${item.id}" title="${escapeHtml(item.name)} - Cmd/Ctrl+${index + 1}" style="background:${item.id === workspace.id ? "var(--accent)" : escapeHtml(item.color)};--highlight:${escapeHtml(item.highlightColor || "transparent")}">
                 ${item.iconImage ? `<img src="${escapeHtml(item.iconImage)}" alt="" />` : escapeHtml(item.icon)}
               </button>
             `
@@ -552,63 +642,23 @@ function render() {
       </aside>
 
       <aside class="app-sidebar">
-        <header class="brand">
-          <div class="mark">C</div>
+        <header class="brand cookie-brand">
           <div class="brand-copy">
-            <div class="brand-title">CookieRS</div>
-            <div class="brand-subtitle">${escapeHtml(workspace.name)}</div>
+            <div class="brand-title">${escapeHtml(workspace.name)}</div>
           </div>
           <button class="collapse-button" data-toggle-sidebar title="Réduire la colonne apps">${state.sidebarCollapsed ? "›" : "‹"}</button>
         </header>
 
-        <section class="chrome-panel">
-          <div class="control-row">
-            <span>Interface</span>
-            <div class="segmented">
-              ${["compact", "normal", "large"]
-                .map(
-                  (item) => `
-                    <button class="${state.density === item ? "active" : ""}" data-density="${item}" title="${item === "compact" ? "A - elements 50%" : item === "normal" ? "B - normal" : "C - elements 125%"}">
-                      ${densityLabel(item)}
-                    </button>
-                  `
-                )
-                .join("")}
-            </div>
-          </div>
-          <div class="control-row">
-            <span>Skin</span>
-            <select data-skin>
-              <option value="biscuit" ${state.skin === "biscuit" ? "selected" : ""}>Biscuit</option>
-              <option value="dark" ${state.skin === "dark" ? "selected" : ""}>Dark</option>
-              <option value="mono" ${state.skin === "mono" ? "selected" : ""}>Mono</option>
-            </select>
-          </div>
-          <div class="control-row">
-            <span>Cachés</span>
-            <button class="mini-toggle ${state.showHiddenApps ? "active" : ""}" data-toggle-hidden-apps title="Afficher apps cachées">${state.showHiddenApps ? "ON" : "OFF"}</button>
-          </div>
-          <div class="json-actions">
-            <button class="mini-toggle" data-export-config>Export JSON</button>
-            <button class="mini-toggle" data-import-config>Import JSON</button>
-            <input type="file" data-import-config-file accept="application/json" hidden />
-          </div>
-        </section>
-
         <section class="sidebar-section">
-          <div class="section-label">
-            <span>Apps</span>
-            <button data-open-modal title="Ajouter une app">+</button>
-          </div>
           <div class="app-list">
             ${apps
               .map((item) => {
-                const favicon = faviconUrl(item.url);
+                const icon = item.iconImage || faviconUrl(item.url);
                 return `
-                  <button class="app-button ${app?.id === item.id ? "active" : ""} ${item.hidden ? "hidden-app" : ""}" draggable="true" data-app="${item.id}" data-menu-app="${item.id}" title="${escapeHtml(item.name)}">
+                  <button class="app-button cookie-app ${app?.id === item.id ? "active" : ""} ${item.hidden ? "hidden-app" : ""}" draggable="true" data-app="${item.id}" data-menu-app="${item.id}" title="${escapeHtml(item.name)}" style="--highlight:${escapeHtml(item.highlightColor || "transparent")}">
                     <span class="app-icon-wrap">
                       <span class="app-icon" style="background:${escapeHtml(item.color)}">
-                        ${favicon ? `<img src="${favicon}" alt="" />` : escapeHtml(iconText(item.name))}
+                        ${icon ? `<img src="${escapeHtml(icon)}" alt="" />` : escapeHtml(iconText(item.name))}
                       </span>
                       ${notificationBadge(item)}
                     </span>
@@ -616,15 +666,18 @@ function render() {
                       <span class="app-name">${escapeHtml(item.name)}</span>
                       <span class="app-url">${escapeHtml(item.url.replace(/^https?:\/\//, ""))}</span>
                     </span>
-                    <span class="notification-dot ${item.notifications ? "" : "off"}" title="${item.notifications ? "Notifications sites autorisées" : "Notifications coupées"}"></span>
+                    <span class="kebab" data-app-kebab="${item.id}" title="Options">⋮</span>
                   </button>
                 `;
               })
               .join("")}
           </div>
         </section>
-        <div class="sidebar-actions">
-          <button class="soft-button" data-open-modal>+ Ajouter une app</button>
+        <div class="cookie-footer">
+          <button data-add-workspace>+ Groupe</button>
+          <button data-toggle-hidden-apps>${state.showHiddenApps ? "◉ ON" : "◌ OFF"}</button>
+          <button data-open-settings="general">♡ Donate</button>
+          <button class="cookie-add-app" data-open-modal>+ App</button>
         </div>
       </aside>
 
@@ -637,14 +690,12 @@ function render() {
           </div>
           <form class="address-form">
             <span>URL</span>
-            <input name="url" value="${escapeHtml(tab?.url || "")}" autocomplete="off" spellcheck="false" />
+            <input name="url" value="${escapeHtml(state.maskUrl ? hostnameFromUrl(tab?.url || "") : tab?.url || "")}" autocomplete="off" spellcheck="false" ${state.maskUrl ? "readonly" : ""} />
           </form>
           <div class="right-controls">
             <button class="icon-button" data-new-tab title="Nouvel onglet">+</button>
-            <button class="icon-button ${tab?.secret ? "armed" : ""}" data-toggle-secret-tab title="Cmd/Ctrl+Shift+S secret">⌘S</button>
-            <button class="icon-button ${state.secretsHidden ? "armed" : ""}" data-toggle-secrets-hidden title="Cmd/Ctrl+Shift+H cacher secrets">◌</button>
-            <button class="icon-button" data-share title="Partager sélection + URL">⇪</button>
-            <button class="icon-button" data-open-properties title="Propriétés">⚙</button>
+            <button class="icon-button" data-page-menu title="Options de page">⋯</button>
+            <button class="icon-button" data-open-settings="general" title="Paramètres">⚙</button>
             <button class="icon-button" data-external title="Ouvrir dans le navigateur">↗</button>
           </div>
         </div>
@@ -692,8 +743,10 @@ function render() {
     ${renderPropertiesModal(app)}
     ${renderWorkspaceModal()}
     ${renderShareModal()}
+    ${renderSettingsModal()}
     ${renderContextMenu()}
     ${renderWorkspaceMenu()}
+    ${renderPageMenu()}
   `;
 
   wireEvents();
@@ -724,13 +777,14 @@ function renderAddModal() {
 function renderPropertiesModal(active) {
   const app = propertiesAppId ? findApp(propertiesAppId) : active;
   if (!propertiesAppId || !app) return "";
+  const icon = app.iconImage || faviconUrl(app.url);
   return `
     <div class="modal-backdrop open" id="properties-modal">
       <form class="modal">
         <h2>Propriétés app</h2>
         <div class="property-head">
           <span class="app-icon large" style="background:${escapeHtml(app.color)}">
-            ${faviconUrl(app.url) ? `<img src="${faviconUrl(app.url)}" alt="" />` : escapeHtml(iconText(app.name))}
+            ${icon ? `<img src="${escapeHtml(icon)}" alt="" />` : escapeHtml(iconText(app.name))}
           </span>
           <div>
             <strong>${escapeHtml(app.name)}</strong>
@@ -739,7 +793,10 @@ function renderPropertiesModal(active) {
         </div>
         <div class="field"><label for="prop-name">Nom</label><input id="prop-name" name="name" value="${escapeHtml(app.name)}" required /></div>
         <div class="field"><label for="prop-url">URL</label><input id="prop-url" name="url" value="${escapeHtml(app.url)}" required /></div>
-        <div class="field"><label for="prop-color">Couleur</label><input id="prop-color" name="color" value="${escapeHtml(app.color)}" /></div>
+        <div class="field"><label for="prop-color">Couleur icône</label><input id="prop-color" name="color" type="color" value="${escapeHtml(app.color)}" /></div>
+        <div class="field"><label for="prop-highlight">Highlight</label><input id="prop-highlight" name="highlightColor" type="color" value="${escapeHtml(app.highlightColor || "#ffffff")}" /></div>
+        <div class="field"><label for="prop-icon-image">Image icône URL</label><input id="prop-icon-image" name="iconImage" value="${escapeHtml(app.iconImage || "")}" placeholder="https://..." /></div>
+        <div class="field"><label for="prop-icon-upload">Uploader icône</label><input id="prop-icon-upload" type="file" accept="image/*" data-upload-app-icon="${app.id}" /></div>
         <div class="field"><label for="prop-count">Compteur notifications</label><input id="prop-count" name="notificationCount" type="number" min="0" value="${Number(app.notificationCount || 0)}" /></div>
         <label class="check-row"><input type="checkbox" name="notifications" ${app.notifications ? "checked" : ""} /> Notifications pour cette app</label>
         <label class="check-row"><input type="checkbox" name="hidden" ${app.hidden ? "checked" : ""} /> App cachée</label>
@@ -762,13 +819,17 @@ function renderWorkspaceModal() {
       <form class="modal">
         <h2>Propriétés groupe</h2>
         <div class="property-head">
-          <span class="workspace-button active preview" style="background:${escapeHtml(workspace.color)}">${escapeHtml(workspace.icon)}</span>
+          <span class="workspace-button active preview" style="background:${escapeHtml(workspace.color)}">
+            ${workspace.iconImage ? `<img src="${escapeHtml(workspace.iconImage)}" alt="" />` : escapeHtml(workspace.icon)}
+          </span>
           <div><strong>${escapeHtml(workspace.name)}</strong><small>Raccourci Cmd/Ctrl+1..9</small></div>
         </div>
         <div class="field"><label for="workspace-name">Nom</label><input id="workspace-name" name="name" value="${escapeHtml(workspace.name)}" required /></div>
         <div class="field"><label for="workspace-icon">Icône texte</label><input id="workspace-icon" name="icon" value="${escapeHtml(workspace.icon)}" maxlength="2" required /></div>
         <div class="field"><label for="workspace-icon-image">Icône image URL</label><input id="workspace-icon-image" name="iconImage" value="${escapeHtml(workspace.iconImage || "")}" placeholder="https://..." /></div>
-        <div class="field"><label for="workspace-color">Couleur</label><input id="workspace-color" name="color" value="${escapeHtml(workspace.color)}" /></div>
+        <div class="field"><label for="workspace-icon-upload">Uploader icône</label><input id="workspace-icon-upload" type="file" accept="image/*" data-upload-workspace-icon="${workspace.id}" /></div>
+        <div class="field"><label for="workspace-color">Couleur groupe</label><input id="workspace-color" name="color" type="color" value="${escapeHtml(workspace.color)}" /></div>
+        <div class="field"><label for="workspace-highlight">Highlight</label><input id="workspace-highlight" name="highlightColor" type="color" value="${escapeHtml(workspace.highlightColor || "#ffffff")}" /></div>
         <div class="modal-actions">
           <button type="button" class="secondary" data-close-workspace>Annuler</button>
           <button type="submit" class="primary">Enregistrer</button>
@@ -796,6 +857,159 @@ function renderShareModal() {
           <button type="button" class="secondary" data-close-share>Fermer</button>
         </div>
       </div>
+    </div>
+  `;
+}
+
+function renderSettingsModal() {
+  if (!state.settingsOpen) return "";
+  const items = [
+    ["general", "Général"],
+    ["downloads", "Téléchargements"],
+    ["notifications", "Notifications"],
+    ["shortcuts", "Raccourcis"],
+    ["permissions", "Micro/caméra"],
+    ["fonts", "Polices"],
+    ["sync", "Sync"],
+    ["extensions", "Extensions"],
+    ["import", "Importer / Exporter"],
+    ["advanced", "Avancé"]
+  ];
+  return `
+    <div class="settings-panel">
+      <aside class="settings-nav">
+        <h2>Paramètres</h2>
+        ${items
+          .map(
+            ([id, label]) => `<button class="${state.settingsSection === id ? "active" : ""}" data-settings-section="${id}"><span>${settingsIcon(id)}</span>${label}</button>`
+          )
+          .join("")}
+      </aside>
+      <section class="settings-body">
+        <button class="settings-close" data-close-settings>×</button>
+        ${renderSettingsSection()}
+      </section>
+    </div>
+  `;
+}
+
+function settingsIcon(id) {
+  return {
+    general: "⌘",
+    downloads: "⇩",
+    notifications: "♢",
+    shortcuts: "⌨",
+    permissions: "◇",
+    fonts: "T",
+    sync: "↻",
+    extensions: "✜",
+    import: "⇳",
+    advanced: "⌁"
+  }[id] || "•";
+}
+
+function renderSettingsSection() {
+  if (state.settingsSection === "general") {
+    return `
+      <div class="settings-card">
+        <div>
+          <h3>Masquer l'URL dans l'écran principal</h3>
+          <p>Affiche seulement le domaine dans la barre principale.</p>
+        </div>
+        <button class="switch ${state.maskUrl ? "on" : ""}" data-toggle-mask-url><span></span></button>
+      </div>
+      <div class="settings-card">
+        <div>
+          <h3>Mode interface</h3>
+          <p>A réduit à 50 %, B normal, C augmenté à 125 %.</p>
+        </div>
+        <div class="segmented settings-segmented">
+          ${["compact", "normal", "large"].map((item) => `<button class="${state.density === item ? "active" : ""}" data-density="${item}">${densityLabel(item)}</button>`).join("")}
+        </div>
+      </div>
+    `;
+  }
+  if (state.settingsSection === "extensions") {
+    return `
+      <div class="settings-card">
+        <div>
+          <h3>Activer le bloqueur de publicités</h3>
+          <p>Emplacement prévu pour listes de filtres intégrées.</p>
+        </div>
+        <button class="switch"><span></span></button>
+      </div>
+    `;
+  }
+  if (state.settingsSection === "import") {
+    return `
+      <div class="settings-card column">
+        <h3>Importer / Exporter les paramètres</h3>
+        <p>Sauvegarde tous les groupes, apps, couleurs, icônes, skins et onglets.</p>
+        <div class="settings-actions">
+          <button class="primary" data-export-config>Exporter JSON</button>
+          <button class="secondary" data-import-config>Importer JSON</button>
+          <input type="file" data-import-config-file accept="application/json" hidden />
+        </div>
+      </div>
+    `;
+  }
+  if (state.settingsSection === "advanced") {
+    return `
+      <form class="settings-card column" data-custom-skin-form>
+        <h3>Skin personnalisé</h3>
+        <p>Définit les couleurs globales du chrome CookieRS.</p>
+        <div class="color-grid">
+          <label>Fond <input type="color" name="cream" value="${escapeHtml(state.customSkin.cream)}" /></label>
+          <label>Sidebar <input type="color" name="sidebar" value="${escapeHtml(state.customSkin.sidebar)}" /></label>
+          <label>Accent <input type="color" name="accent" value="${escapeHtml(state.customSkin.accent)}" /></label>
+        </div>
+        <div class="field">
+          <label>Skin</label>
+          <select data-skin>
+            <option value="biscuit" ${state.skin === "biscuit" ? "selected" : ""}>Biscuit</option>
+            <option value="dark" ${state.skin === "dark" ? "selected" : ""}>Dark</option>
+            <option value="mono" ${state.skin === "mono" ? "selected" : ""}>Mono</option>
+            <option value="custom" ${state.skin === "custom" ? "selected" : ""}>Custom</option>
+          </select>
+        </div>
+        <button class="primary" type="submit">Appliquer le skin</button>
+      </form>
+    `;
+  }
+  return `
+    <div class="settings-card">
+      <div>
+        <h3>${escapeHtml(itemsLabel(state.settingsSection))}</h3>
+        <p>Section prévue pour les réglages CookieRS.</p>
+      </div>
+    </div>
+  `;
+}
+
+function itemsLabel(id) {
+  return {
+    downloads: "Téléchargements",
+    notifications: "Notifications",
+    shortcuts: "Raccourcis",
+    permissions: "Micro/caméra",
+    fonts: "Polices",
+    sync: "Sync"
+  }[id] || "Réglages";
+}
+
+function renderPageMenu() {
+  if (!pageMenu) return "";
+  const tab = getActiveTab();
+  return `
+    <div class="context-menu page-menu" style="right:22px;top:72px">
+      <button data-page-action="back">Retour</button>
+      <button data-page-action="forward">Avant</button>
+      <button data-page-action="reload">Recharger</button>
+      <button data-page-action="share">Partager sélection + URL</button>
+      <button data-page-action="secret">${tab?.secret ? "Retirer secret" : "Onglet secret"}</button>
+      <button data-page-action="hide-secrets">${state.secretsHidden ? "Afficher secrets" : "Cacher secrets"}</button>
+      <button data-page-action="mask-url">${state.maskUrl ? "Afficher URL" : "Masquer URL"}</button>
+      <button data-page-action="properties">Propriétés app</button>
     </div>
   `;
 }
@@ -853,9 +1067,22 @@ function wireEvents() {
     propertiesWorkspaceId = event.currentTarget.dataset.workspaceProperties;
     render();
   });
+  document.querySelector("[data-add-workspace]")?.addEventListener("click", addWorkspace);
 
   document.querySelector("[data-toggle-sidebar]")?.addEventListener("click", toggleSidebar);
   document.querySelector("[data-toggle-hidden-apps]")?.addEventListener("click", toggleHiddenApps);
+  document.querySelectorAll("[data-open-settings]").forEach((button) => {
+    button.addEventListener("click", () => openSettings(button.dataset.openSettings || "general"));
+  });
+  document.querySelector("[data-close-settings]")?.addEventListener("click", closeSettings);
+  document.querySelectorAll("[data-settings-section]").forEach((button) => {
+    button.addEventListener("click", () => setSettingsSection(button.dataset.settingsSection));
+  });
+  document.querySelector("[data-toggle-mask-url]")?.addEventListener("click", toggleMaskUrl);
+  document.querySelector("[data-custom-skin-form]")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    updateCustomSkin(new FormData(event.currentTarget));
+  });
   document.querySelector("[data-export-config]")?.addEventListener("click", exportConfig);
   document.querySelector("[data-import-config]")?.addEventListener("click", () => {
     document.querySelector("[data-import-config-file]")?.click();
@@ -886,6 +1113,16 @@ function wireEvents() {
     });
   });
 
+  document.querySelectorAll("[data-app-kebab]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      contextMenu = { appId: button.dataset.appKebab, x: event.clientX, y: event.clientY };
+      workspaceMenu = null;
+      render();
+    });
+  });
+
   document.querySelectorAll("[data-tab]").forEach((button) => button.addEventListener("click", () => selectTab(button.dataset.tab)));
   document.querySelectorAll("[data-close-tab]").forEach((button) => {
     button.addEventListener("click", (event) => {
@@ -897,6 +1134,11 @@ function wireEvents() {
   document.querySelector("[data-new-tab]")?.addEventListener("click", () => createTab("https://www.google.com"));
   document.querySelector("[data-toggle-secret-tab]")?.addEventListener("click", toggleActiveTabSecret);
   document.querySelector("[data-toggle-secrets-hidden]")?.addEventListener("click", toggleSecretsHidden);
+  document.querySelector("[data-page-menu]")?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    pageMenu = pageMenu ? null : true;
+    render();
+  });
   document.querySelector("[data-share]")?.addEventListener("click", openShareModal);
   document.querySelector("[data-open-properties]")?.addEventListener("click", () => {
     propertiesAppId = activeApp()?.id || null;
@@ -941,10 +1183,11 @@ function wireEvents() {
   wireShareModal();
   wireContextMenu();
   wireWorkspaceMenu();
+  wirePageMenu();
   wireShortcuts();
 
   document.addEventListener("click", (event) => {
-    if (!event.target.closest(".context-menu") && (contextMenu || workspaceMenu)) {
+    if (!event.target.closest(".context-menu") && (contextMenu || workspaceMenu || pageMenu)) {
       closeMenus();
       render();
     }
@@ -1007,6 +1250,15 @@ function wirePropertiesModal() {
     render();
   });
   document.querySelector("[data-delete-app]")?.addEventListener("click", (event) => deleteApp(event.currentTarget.dataset.deleteApp));
+  document.querySelector("[data-upload-app-icon]")?.addEventListener("change", (event) => {
+    readIconUpload(event.target.files?.[0], (dataUrl) => {
+      const app = findApp(event.target.dataset.uploadAppIcon);
+      if (!app) return;
+      app.iconImage = dataUrl;
+      saveState();
+      render();
+    });
+  });
   modal.querySelector("form").addEventListener("submit", (event) => {
     event.preventDefault();
     updateAppProperties(propertiesAppId, new FormData(event.currentTarget));
@@ -1025,6 +1277,15 @@ function wireWorkspaceModal() {
   document.querySelector("[data-close-workspace]")?.addEventListener("click", () => {
     propertiesWorkspaceId = null;
     render();
+  });
+  document.querySelector("[data-upload-workspace-icon]")?.addEventListener("change", (event) => {
+    readIconUpload(event.target.files?.[0], (dataUrl) => {
+      const workspace = findWorkspace(event.target.dataset.uploadWorkspaceIcon);
+      if (!workspace) return;
+      workspace.iconImage = dataUrl;
+      saveState();
+      render();
+    });
   });
   modal.querySelector("form").addEventListener("submit", (event) => {
     event.preventDefault();
@@ -1087,6 +1348,31 @@ function wireWorkspaceMenu() {
       }
       if (action === "previous") selectWorkspaceByOffset(-1);
       if (action === "next") selectWorkspaceByOffset(1);
+    });
+  });
+}
+
+function wirePageMenu() {
+  document.querySelectorAll("[data-page-action]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const action = button.dataset.pageAction;
+      const webview = document.querySelector("webview.active");
+      closeMenus();
+      if (action === "back" && webview?.canGoBack()) webview.goBack();
+      if (action === "forward" && webview?.canGoForward()) webview.goForward();
+      if (action === "reload") webview?.reload();
+      if (action === "share") openShareModal();
+      if (action === "secret") toggleActiveTabSecret();
+      if (action === "hide-secrets") toggleSecretsHidden();
+      if (action === "mask-url") toggleMaskUrl();
+      if (action === "properties") {
+        propertiesAppId = activeApp()?.id || null;
+        render();
+      }
+      if (!["share", "secret", "hide-secrets", "mask-url", "properties"].includes(action)) {
+        closeMenus();
+        render();
+      }
     });
   });
 }

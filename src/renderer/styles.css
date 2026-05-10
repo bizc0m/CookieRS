@@ -50,6 +50,15 @@ body.skin-mono {
   --shadow: 0 16px 44px rgba(0, 0, 0, 0.1);
 }
 
+body.skin-custom {
+  --cream: var(--custom-cream);
+  --sidebar: var(--custom-sidebar);
+  --sidebar-strong: color-mix(in srgb, var(--custom-sidebar) 86%, #000 14%);
+  --surface: #ffffff;
+  --accent: var(--custom-accent);
+  --accent-dark: color-mix(in srgb, var(--custom-accent) 76%, #000 24%);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -129,7 +138,7 @@ body:not(.density-normal) .add-workspace {
 .workspace-button.active {
   color: white;
   background: var(--accent);
-  box-shadow: 0 10px 22px rgba(225, 111, 67, 0.3);
+  box-shadow: 0 10px 22px rgba(225, 111, 67, 0.3), 0 0 0 3px var(--highlight);
 }
 
 .workspace-button:hover,
@@ -155,6 +164,18 @@ body:not(.density-normal) .add-workspace {
   gap: 10px;
   height: 68px;
   padding: 0 18px;
+}
+
+.cookie-brand {
+  height: 76px;
+  align-items: end;
+  padding-bottom: 10px;
+}
+
+.cookie-brand .brand-title {
+  color: #5d5b58;
+  font-size: 20px;
+  font-weight: 520;
 }
 
 body:not(.density-normal) .brand {
@@ -327,7 +348,32 @@ body:not(.density-normal) .app-button {
 
 .app-button.active {
   background: var(--surface);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow), 0 0 0 3px var(--highlight);
+}
+
+.cookie-app {
+  grid-template-columns: 34px minmax(0, 1fr) 22px;
+  border-radius: 18px;
+}
+
+.cookie-app.active {
+  background: #deddda;
+  box-shadow: 0 0 0 3px var(--highlight);
+}
+
+.kebab {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 28px;
+  border-radius: 8px;
+  color: #6c6965;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.kebab:hover {
+  background: rgba(0, 0, 0, 0.08);
 }
 
 .app-button.hidden-app {
@@ -406,6 +452,27 @@ body:not(.density-normal) .notification-dot {
 .sidebar-actions {
   margin-top: auto;
   padding: calc(12px * var(--ui-scale));
+}
+
+.cookie-footer {
+  display: grid;
+  gap: 10px;
+  margin-top: auto;
+  padding: 14px 12px 10px;
+}
+
+.cookie-footer button {
+  min-height: 34px;
+  border-radius: 8px;
+  color: #5d5b58;
+  font-size: 17px;
+  text-align: center;
+}
+
+.cookie-footer .cookie-add-app {
+  color: white;
+  background: #4caf50;
+  font-size: 18px;
 }
 
 .soft-button {
@@ -517,6 +584,14 @@ body:not(.density-normal) .tab {
   color: var(--ink);
   background: transparent;
   font-size: 13px;
+}
+
+.shell.url-masked .address-form {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.shell.url-masked .address-form span {
+  display: none;
 }
 
 body:not(.density-normal) .address-form input {
@@ -796,6 +871,147 @@ body:not(.density-normal) .modal {
 
 .context-menu .danger-text {
   color: #c4473b;
+}
+
+.page-menu {
+  left: auto;
+}
+
+.settings-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  background: #ddd;
+}
+
+.settings-nav {
+  padding: 16px 16px 24px;
+  background: #f8f8f8;
+}
+
+.settings-nav h2 {
+  margin: 0 0 42px;
+  color: #555;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.settings-nav button {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 52px;
+  border-radius: 12px;
+  padding: 6px 14px;
+  color: #787878;
+  font-size: 20px;
+  text-align: left;
+}
+
+.settings-nav button.active {
+  color: #4caf50;
+  background: #eef9ee;
+  font-weight: 760;
+}
+
+.settings-body {
+  position: relative;
+  padding: 98px 36px;
+  background: #ddd;
+}
+
+.settings-close {
+  position: absolute;
+  top: 18px;
+  right: 26px;
+  color: #777;
+  font-size: 34px;
+}
+
+.settings-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 20px;
+  max-width: 900px;
+  min-height: 98px;
+  margin: 0 auto 18px;
+  border-radius: 14px;
+  padding: 26px 30px;
+  background: white;
+}
+
+.settings-card.column {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+
+.settings-card h3 {
+  margin: 0 0 6px;
+  color: #555;
+  font-size: 23px;
+  font-weight: 520;
+}
+
+.settings-card p {
+  margin: 0;
+  color: #777;
+  font-size: 17px;
+}
+
+.switch {
+  position: relative;
+  width: 50px;
+  height: 28px;
+  border-radius: 99px;
+  background: #999;
+}
+
+.switch span {
+  position: absolute;
+  top: -1px;
+  left: 0;
+  width: 31px;
+  height: 31px;
+  border-radius: 99px;
+  background: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
+}
+
+.switch.on {
+  background: #4caf50;
+}
+
+.switch.on span {
+  left: 21px;
+}
+
+.settings-segmented {
+  grid-template-columns: repeat(3, 44px);
+}
+
+.settings-segmented button {
+  height: 34px;
+  font-size: 15px;
+}
+
+.settings-actions,
+.color-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.color-grid label {
+  display: grid;
+  gap: 6px;
+  color: #666;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .shell.sidebar-icons {
