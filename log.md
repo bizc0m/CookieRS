@@ -2,6 +2,9 @@
 
 ## 2026-05-11
 
+- Correction du clignotement Gmail : le détecteur RSS ne reconstruit plus les webviews.
+- Correction du deuxième bouton : menu contextuel ouvert sans rechargement du webview.
+- Correction du partage : modal ouverte sans re-render global et fallback rapide si la sélection est inaccessible.
 - Fusion visuelle des deux barres latérales en une sidebar compacte.
 - Ajout du support d'extensions Chrome unpacked.
 - Ajout d'un détecteur RSS/Atom par page.

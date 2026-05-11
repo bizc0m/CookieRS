@@ -740,12 +740,19 @@ async function detectRssFeeds(webview) {
   }
   state.rssFeedsByTab[tabId] = Array.isArray(feeds) ? feeds : [];
   saveState();
-  render();
+  refreshRssControls();
 }
 
 function rssFeedsForActiveTab() {
   const tab = getActiveTab();
   return tab ? state.rssFeedsByTab[tab.id] || [] : [];
+}
+
+function refreshRssControls() {
+  const feeds = rssFeedsForActiveTab();
+  const button = document.querySelector("[data-rss-menu]");
+  if (button) button.classList.toggle("armed", feeds.length > 0);
+  if (rssMenu) mountRssMenu();
 }
 
 async function loadChromeExtension() {
@@ -821,18 +828,26 @@ async function openShareModal() {
   const tab = getActiveTab();
   const webview = document.querySelector("webview.active");
   if (!tab) return;
-  let selectedText = "";
-  if (webview) try {
-    selectedText = await webview.executeJavaScript("String(window.getSelection && window.getSelection().toString() || '')");
-  } catch {
-    selectedText = "";
-  }
   shareDraft = {
-    text: selectedText.trim(),
+    text: "",
     title: tab.title,
     url: tab.url
   };
-  render();
+  closeMenus();
+  removeFloatingMenus();
+  mountShareModal();
+  if (!webview) return;
+  try {
+    const selectedText = await Promise.race([
+      webview.executeJavaScript("String(window.getSelection && window.getSelection().toString() || '')"),
+      new Promise((resolve) => setTimeout(() => resolve(""), 450))
+    ]);
+    if (!shareDraft || shareDraft.url !== tab.url) return;
+    shareDraft.text = String(selectedText || "").trim();
+    updateSharePreview();
+  } catch {
+    updateSharePreview();
+  }
 }
 
 function shareText() {
@@ -853,7 +868,7 @@ function shareTo(target) {
   if (target === "buffer") window.cookiers.openExternal(`https://buffer.com/add?text=${encodedText}&url=${encodedUrl}`);
   if (target === "copy") {
     shareDraft = null;
-    render();
+    document.getElementById("share-modal")?.remove();
   }
 }
 
@@ -862,6 +877,56 @@ function closeMenus() {
   workspaceMenu = null;
   pageMenu = null;
   rssMenu = false;
+}
+
+function removeFloatingMenus() {
+  document.querySelectorAll(".page-menu, .rss-menu").forEach((menu) => menu.remove());
+}
+
+function mountPageMenu() {
+  removeFloatingMenus();
+  if (!pageMenu) return;
+  root.insertAdjacentHTML("beforeend", renderPageMenu());
+  wirePageMenu();
+  installFloatingMenuCloser();
+}
+
+function mountRssMenu() {
+  removeFloatingMenus();
+  if (!rssMenu) return;
+  root.insertAdjacentHTML("beforeend", renderRssMenu());
+  document.querySelectorAll("[data-rss-open]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const feed = rssFeedsForActiveTab()[Number(button.dataset.rssOpen)];
+      if (feed?.url) window.cookiers.openExternal(feed.url);
+      closeMenus();
+      removeFloatingMenus();
+    });
+  });
+  installFloatingMenuCloser();
+}
+
+function mountShareModal() {
+  document.getElementById("share-modal")?.remove();
+  if (!shareDraft) return;
+  root.insertAdjacentHTML("beforeend", renderShareModal());
+  wireShareModal();
+}
+
+function updateSharePreview() {
+  const preview = document.querySelector("#share-modal .share-preview");
+  if (preview) preview.textContent = shareText();
+}
+
+function installFloatingMenuCloser() {
+  setTimeout(() => {
+    document.addEventListener("click", (event) => {
+      if (!event.target.closest(".context-menu")) {
+        closeMenus();
+        removeFloatingMenus();
+      }
+    }, { once: true });
+  }, 0);
 }
 
 function render() {
@@ -1617,13 +1682,13 @@ function wireEvents() {
     event.stopPropagation();
     pageMenu = pageMenu ? null : true;
     rssMenu = false;
-    render();
+    mountPageMenu();
   });
   document.querySelector("[data-rss-menu]")?.addEventListener("click", (event) => {
     event.stopPropagation();
     rssMenu = !rssMenu;
     pageMenu = false;
-    render();
+    mountRssMenu();
   });
   document.querySelector("[data-share]")?.addEventListener("click", openShareModal);
   document.querySelector("[data-add-chrome-extension]")?.addEventListener("click", loadChromeExtension);
@@ -1641,7 +1706,7 @@ function wireEvents() {
       const feed = rssFeedsForActiveTab()[Number(button.dataset.rssOpen)];
       if (feed?.url) window.cookiers.openExternal(feed.url);
       closeMenus();
-      render();
+      removeFloatingMenus();
     });
   });
   document.querySelector("[data-open-properties]")?.addEventListener("click", () => {
@@ -1813,7 +1878,13 @@ function wireShareModal() {
   if (!modal) return;
   document.querySelector("[data-close-share]")?.addEventListener("click", () => {
     shareDraft = null;
-    render();
+    modal.remove();
+  });
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) {
+      shareDraft = null;
+      modal.remove();
+    }
   });
   document.querySelectorAll("[data-share-target]").forEach((button) => button.addEventListener("click", () => shareTo(button.dataset.shareTarget)));
 }
@@ -1875,13 +1946,14 @@ function wirePageMenu() {
       const app = activeApp();
       const workspace = activeWorkspace();
       closeMenus();
+      removeFloatingMenus();
       if (action === "back" && webview?.canGoBack()) webview.goBack();
       if (action === "forward" && webview?.canGoForward()) webview.goForward();
       if (action === "reload") webview?.reload();
       if (action === "share") openShareModal();
       if (action === "rss") {
         rssMenu = true;
-        render();
+        mountRssMenu();
       }
       if (action === "secret") toggleActiveTabSecret();
       if (action === "hide-secrets") toggleSecretsHidden();
@@ -1918,7 +1990,7 @@ function wirePageMenu() {
       if (action === "workspace-next") selectWorkspaceByOffset(1);
       if (!["share", "rss", "secret", "hide-secrets", "mask-url", "properties", "app-notifications", "app-hidden", "app-clear-count", "app-delete", "workspace-properties", "workspace-previous", "workspace-next"].includes(action)) {
         closeMenus();
-        render();
+        removeFloatingMenus();
       }
     });
   });
