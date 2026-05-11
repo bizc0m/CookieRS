@@ -3,6 +3,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  expandHomePath,
+  normalizeExternalUrl,
+  normalizePermissionValue,
+  safeDownloadFilename
+} from "./shared/validation.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let permissionPolicy = {
@@ -26,16 +32,58 @@ function permissionAllowed(permission) {
 }
 
 function expandHome(value) {
-  const target = String(value || "").trim();
-  if (!target) return "";
-  return target.startsWith("~/") ? path.join(os.homedir(), target.slice(2)) : target;
+  return expandHomePath(value, os.homedir());
+}
+
+function safeDownloadDirectory(value) {
+  const directory = expandHome(value);
+  if (!directory) return "";
+  try {
+    const stats = fs.statSync(directory);
+    return stats.isDirectory() ? directory : "";
+  } catch {
+    return "";
+  }
+}
+
+function normalizePermissions(permissions) {
+  return {
+    notifications: normalizePermissionValue(permissions?.notifications, permissionPolicy.notifications),
+    camera: normalizePermissionValue(permissions?.camera, permissionPolicy.camera),
+    microphone: normalizePermissionValue(permissions?.microphone, permissionPolicy.microphone),
+    media: normalizePermissionValue(permissions?.media, permissionPolicy.media),
+    geolocation: normalizePermissionValue(permissions?.geolocation, permissionPolicy.geolocation)
+  };
+}
+
+function normalizePreferences(preferences) {
+  return {
+    askDownloadLocation: preferences?.askDownloadLocation !== false,
+    downloadsPath: String(preferences?.downloadsPath || "").trim()
+  };
+}
+
+function readExtensionManifest(target) {
+  const manifestPath = path.join(target, "manifest.json");
+  const raw = fs.readFileSync(manifestPath, "utf8");
+  const manifest = JSON.parse(raw);
+  if (!manifest || typeof manifest !== "object") {
+    throw new Error("Manifest Chrome invalide.");
+  }
+  if (!manifest.manifest_version || !manifest.name) {
+    throw new Error("Manifest Chrome incomplet.");
+  }
+  return manifest;
 }
 
 async function loadExtensionFromPath(extensionPath) {
-  const target = expandHome(extensionPath);
-  if (!target || !fs.existsSync(path.join(target, "manifest.json"))) {
+  const requestedPath = expandHome(extensionPath);
+  if (!requestedPath) throw new Error("Dossier d'extension vide.");
+  const target = fs.realpathSync(requestedPath);
+  if (!target || !fs.existsSync(path.join(target, "manifest.json")) || !fs.statSync(target).isDirectory()) {
     throw new Error("Dossier invalide: manifest.json introuvable.");
   }
+  readExtensionManifest(target);
   const existing = Array.from(loadedExtensions.values()).find((extension) => extension.path === target);
   if (existing) {
     return {
@@ -47,7 +95,7 @@ async function loadExtensionFromPath(extensionPath) {
       error: ""
     };
   }
-  const extension = await session.defaultSession.loadExtension(target, { allowFileAccess: true });
+  const extension = await session.defaultSession.loadExtension(target, { allowFileAccess: false });
   loadedExtensions.set(extension.id, { ...extension, path: target });
   return {
     id: extension.id,
@@ -85,9 +133,9 @@ app.whenReady().then(() => {
     callback(permissionAllowed(permission));
   });
   session.defaultSession.on("will-download", (_event, item) => {
-    const directory = expandHome(downloadPolicy.downloadsPath);
+    const directory = safeDownloadDirectory(downloadPolicy.downloadsPath);
     if (!downloadPolicy.askDownloadLocation && directory) {
-      item.setSavePath(path.join(directory, item.getFilename()));
+      item.setSavePath(path.join(directory, safeDownloadFilename(item.getFilename())));
     }
   });
 
@@ -103,7 +151,7 @@ app.on("window-all-closed", () => {
 });
 
 ipcMain.handle("open-external", async (_event, url) => {
-  await shell.openExternal(url);
+  await shell.openExternal(normalizeExternalUrl(url));
 });
 
 ipcMain.handle("copy-text", async (_event, text) => {
@@ -111,12 +159,12 @@ ipcMain.handle("copy-text", async (_event, text) => {
 });
 
 ipcMain.handle("set-permissions", async (_event, permissions) => {
-  permissionPolicy = { ...permissionPolicy, ...(permissions || {}) };
+  permissionPolicy = normalizePermissions(permissions || {});
   return permissionPolicy;
 });
 
 ipcMain.handle("set-preferences", async (_event, preferences) => {
-  downloadPolicy = { ...downloadPolicy, ...(preferences || {}) };
+  downloadPolicy = normalizePreferences(preferences || {});
   return downloadPolicy;
 });
 

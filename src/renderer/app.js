@@ -74,7 +74,7 @@ let chromeExtensionsRestored = false;
 let rssMenu = false;
 
 const root = document.getElementById("app");
-setLaunchDefault();
+state.settingsOpen = false;
 
 function loadState() {
   try {
@@ -336,16 +336,6 @@ function setSettingsSection(section) {
   state.settingsSection = section;
   saveState();
   render();
-}
-
-function setLaunchDefault() {
-  const workspace = state.workspaces[0];
-  if (!workspace) return;
-  state.settingsOpen = false;
-  state.activeWorkspaceId = workspace.id;
-  const app = (state.appsByWorkspace[workspace.id] || [])[0];
-  if (app) state.activeAppByWorkspace[workspace.id] = app.id;
-  activeTabId = null;
 }
 
 function updateSetting(key, value) {

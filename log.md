@@ -2,6 +2,11 @@
 
 ## 2026-05-11
 
+- Durcissement IPC : `openExternal` limite maintenant les protocoles à http/https/mailto.
+- Durcissement extensions Chrome : validation du manifest et chargement sans accès fichier direct.
+- Durcissement téléchargements : chemin vérifié et nom de fichier nettoyé.
+- Suppression du reset forcé du groupe/app au démarrage.
+- Ajout de tests Node sur les validations critiques.
 - Correction du clignotement Gmail : le détecteur RSS ne reconstruit plus les webviews.
 - Correction du deuxième bouton : menu contextuel ouvert sans rechargement du webview.
 - Correction du partage : modal ouverte sans re-render global et fallback rapide si la sélection est inaccessible.

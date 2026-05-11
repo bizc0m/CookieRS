@@ -100,5 +100,12 @@
 ## Build
 
 - Développement : `npm start`.
+- Tests validations : `npm test`.
 - Version cliquable macOS : `npm run pack:clickable`.
 - Builds multi-OS : `npm run build:mac`, `npm run build:win`, `npm run build:linux`.
+
+## Sécurité locale
+
+- Ouverture externe limitée aux protocoles `http`, `https` et `mailto`.
+- Extensions Chrome locales validées par `manifest.json`.
+- Téléchargements vers dossier existant uniquement quand le chemin par défaut est utilisé.
