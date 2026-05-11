@@ -12,8 +12,8 @@ function createWindow() {
     minHeight: 620,
     title: "CookieRS",
     backgroundColor: "#f6f4ee",
-    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
-    trafficLightPosition: { x: 16, y: 16 },
+    titleBarStyle: process.platform === "darwin" ? "hidden" : "default",
+    trafficLightPosition: { x: 18, y: 20 },
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       webviewTag: true,

@@ -664,9 +664,7 @@ function render() {
                     </span>
                     <span class="app-copy">
                       <span class="app-name">${escapeHtml(item.name)}</span>
-                      <span class="app-url">${escapeHtml(item.url.replace(/^https?:\/\//, ""))}</span>
                     </span>
-                    <span class="kebab" data-app-kebab="${item.id}" title="Options">⋮</span>
                   </button>
                 `;
               })
@@ -675,8 +673,6 @@ function render() {
         </section>
         <div class="cookie-footer">
           <button data-add-workspace>+ Groupe</button>
-          <button data-toggle-hidden-apps>${state.showHiddenApps ? "◉ ON" : "◌ OFF"}</button>
-          <button data-open-settings="general">♡ Donate</button>
           <button class="cookie-add-app" data-open-modal>+ App</button>
         </div>
       </aside>
@@ -694,7 +690,8 @@ function render() {
           </form>
           <div class="right-controls">
             <button class="icon-button" data-new-tab title="Nouvel onglet">+</button>
-            <button class="icon-button" data-page-menu title="Options de page">⋯</button>
+            <button class="icon-button" data-share title="Partager sélection + URL">⇪</button>
+            <button class="icon-button" data-page-menu title="Menu contextuel">☰</button>
             <button class="icon-button" data-open-settings="general" title="Paramètres">⚙</button>
             <button class="icon-button" data-external title="Ouvrir dans le navigateur">↗</button>
           </div>
@@ -927,6 +924,20 @@ function renderSettingsSection() {
           ${["compact", "normal", "large"].map((item) => `<button class="${state.density === item ? "active" : ""}" data-density="${item}">${densityLabel(item)}</button>`).join("")}
         </div>
       </div>
+      <div class="settings-card">
+        <div>
+          <h3>Afficher les apps cachées</h3>
+          <p>Contrôle l'affichage temporaire des apps cachées.</p>
+        </div>
+        <button class="switch ${state.showHiddenApps ? "on" : ""}" data-toggle-hidden-apps><span></span></button>
+      </div>
+      <div class="settings-card">
+        <div>
+          <h3>Donate</h3>
+          <p>Emplacement réservé dans les réglages globaux.</p>
+        </div>
+        <button class="secondary" type="button">Donate</button>
+      </div>
     `;
   }
   if (state.settingsSection === "extensions") {
@@ -1000,8 +1011,10 @@ function itemsLabel(id) {
 function renderPageMenu() {
   if (!pageMenu) return "";
   const tab = getActiveTab();
+  const app = activeApp();
   return `
     <div class="context-menu page-menu" style="right:22px;top:72px">
+      <div class="context-label">Page</div>
       <button data-page-action="back">Retour</button>
       <button data-page-action="forward">Avant</button>
       <button data-page-action="reload">Recharger</button>
@@ -1009,7 +1022,21 @@ function renderPageMenu() {
       <button data-page-action="secret">${tab?.secret ? "Retirer secret" : "Onglet secret"}</button>
       <button data-page-action="hide-secrets">${state.secretsHidden ? "Afficher secrets" : "Cacher secrets"}</button>
       <button data-page-action="mask-url">${state.maskUrl ? "Afficher URL" : "Masquer URL"}</button>
+      <button data-page-action="external">Ouvrir navigateur</button>
+      <div class="context-label">App</div>
+      <button data-page-action="app-open">Ouvrir ${escapeHtml(app?.name || "app")}</button>
+      <button data-page-action="app-new-tab">Nouvel onglet app</button>
+      <button data-page-action="app-secret-tab">Onglet secret app</button>
       <button data-page-action="properties">Propriétés app</button>
+      <button data-page-action="app-duplicate">Dupliquer app</button>
+      <button data-page-action="app-notifications">${app?.notifications ? "Couper notifications" : "Activer notifications"}</button>
+      <button data-page-action="app-hidden">${app?.hidden ? "Afficher app" : "Cacher app"}</button>
+      <button data-page-action="app-clear-count">Reset compteur</button>
+      <button data-page-action="app-delete" class="danger-text">Supprimer app</button>
+      <div class="context-label">Groupe</div>
+      <button data-page-action="workspace-properties">Propriétés groupe</button>
+      <button data-page-action="workspace-previous">Groupe précédent</button>
+      <button data-page-action="workspace-next">Groupe suivant</button>
     </div>
   `;
 }
@@ -1109,16 +1136,6 @@ function wireEvents() {
       workspaceMenu = null;
       state.activeAppByWorkspace[state.activeWorkspaceId] = button.dataset.app;
       saveState();
-      render();
-    });
-  });
-
-  document.querySelectorAll("[data-app-kebab]").forEach((button) => {
-    button.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      contextMenu = { appId: button.dataset.appKebab, x: event.clientX, y: event.clientY };
-      workspaceMenu = null;
       render();
     });
   });
@@ -1357,6 +1374,8 @@ function wirePageMenu() {
     button.addEventListener("click", () => {
       const action = button.dataset.pageAction;
       const webview = document.querySelector("webview.active");
+      const app = activeApp();
+      const workspace = activeWorkspace();
       closeMenus();
       if (action === "back" && webview?.canGoBack()) webview.goBack();
       if (action === "forward" && webview?.canGoForward()) webview.goForward();
@@ -1365,11 +1384,37 @@ function wirePageMenu() {
       if (action === "secret") toggleActiveTabSecret();
       if (action === "hide-secrets") toggleSecretsHidden();
       if (action === "mask-url") toggleMaskUrl();
+      if (action === "external") {
+        const tab = getActiveTab();
+        if (tab) window.cookiers.openExternal(tab.url);
+      }
+      if (action === "app-open" && app) selectApp(app.id);
+      if (action === "app-new-tab" && app) createTab(app.url);
+      if (action === "app-secret-tab" && app) createTab(app.url, true);
       if (action === "properties") {
-        propertiesAppId = activeApp()?.id || null;
+        propertiesAppId = app?.id || null;
         render();
       }
-      if (!["share", "secret", "hide-secrets", "mask-url", "properties"].includes(action)) {
+      if (action === "app-duplicate" && app) duplicateApp(app.id);
+      if (action === "app-notifications" && app) {
+        app.notifications = !app.notifications;
+        saveState();
+        render();
+      }
+      if (action === "app-hidden" && app) toggleAppHidden(app.id);
+      if (action === "app-clear-count" && app) {
+        app.notificationCount = 0;
+        saveState();
+        render();
+      }
+      if (action === "app-delete" && app) deleteApp(app.id);
+      if (action === "workspace-properties" && workspace) {
+        propertiesWorkspaceId = workspace.id;
+        render();
+      }
+      if (action === "workspace-previous") selectWorkspaceByOffset(-1);
+      if (action === "workspace-next") selectWorkspaceByOffset(1);
+      if (!["share", "secret", "hide-secrets", "mask-url", "properties", "app-notifications", "app-hidden", "app-clear-count", "app-delete", "workspace-properties", "workspace-previous", "workspace-next"].includes(action)) {
         closeMenus();
         render();
       }
