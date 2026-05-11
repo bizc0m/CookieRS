@@ -2,6 +2,13 @@
 
 ## 2026-05-11
 
+- Remise visible par défaut des labels de sites dans la colonne apps.
+- Ajout du réglage `Colonne apps compacte`.
+- Déplacement de `+ Groupe` dans la colonne groupes.
+- Maintien de `+ App` dans la colonne apps.
+- Alignement bas des boutons d'ajout groupe/app.
+- La roue de réglage de la colonne groupes ouvre maintenant les paramètres globaux.
+- Ajout des réglages réels de taille d'icônes groupes/apps.
 - Unification de la sidebar : retrait des boutons OFF et Donate.
 - Déplacement de l'affichage des apps cachées dans les réglages globaux.
 - Déplacement de Donate dans les réglages globaux.

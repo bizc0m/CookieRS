@@ -108,12 +108,20 @@ button {
   border-right: 1px solid var(--line);
 }
 
+.workspace-list {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
 .workspace-button,
 .add-workspace {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  width: var(--group-icon-size);
+  height: var(--group-icon-size);
   border-radius: 13px;
   color: #554d44;
   background: #f8f3ea;
@@ -129,8 +137,8 @@ button {
 
 body:not(.density-normal) .workspace-button,
 body:not(.density-normal) .add-workspace {
-  width: calc(44px * var(--ui-scale));
-  height: calc(44px * var(--ui-scale));
+  width: var(--group-icon-size);
+  height: var(--group-icon-size);
   border-radius: calc(13px * var(--ui-scale));
   font-size: calc(16px * var(--ui-scale));
 }
@@ -148,6 +156,46 @@ body:not(.density-normal) .add-workspace {
 
 .workspace-spacer {
   flex: 1;
+}
+
+.workspace-footer {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+}
+
+.workspace-add-button,
+.workspace-settings-button {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 44px;
+  border-radius: 12px;
+  color: #5d5b58;
+  background: #f8f3ea;
+  font-weight: 720;
+}
+
+.workspace-add-button {
+  gap: 1px;
+  min-height: 58px;
+}
+
+.workspace-add-button span {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.workspace-add-button small {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 10px;
+  line-height: 1;
+  text-overflow: ellipsis;
+}
+
+.workspace-settings-button {
+  font-size: 18px;
 }
 
 .app-sidebar {
@@ -324,20 +372,20 @@ body:not(.density-normal) .app-list {
 
 .app-button {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto;
+  grid-template-columns: var(--app-icon-size) minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   width: 100%;
-  min-height: 46px;
+  min-height: calc(var(--app-icon-size) + 12px);
   padding: 6px 9px;
   border-radius: 12px;
   text-align: left;
 }
 
 body:not(.density-normal) .app-button {
-  grid-template-columns: calc(34px * var(--ui-scale)) minmax(0, 1fr) auto;
+  grid-template-columns: var(--app-icon-size) minmax(0, 1fr) auto;
   gap: calc(10px * var(--ui-scale));
-  min-height: calc(46px * var(--ui-scale));
+  min-height: calc(var(--app-icon-size) + 12px);
   padding: calc(6px * var(--ui-scale)) calc(9px * var(--ui-scale));
   border-radius: calc(12px * var(--ui-scale));
 }
@@ -352,7 +400,7 @@ body:not(.density-normal) .app-button {
 }
 
 .cookie-app {
-  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-columns: var(--app-icon-size) minmax(0, 1fr);
   border-radius: 18px;
 }
 
@@ -368,8 +416,8 @@ body:not(.density-normal) .app-button {
 .app-icon {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: var(--app-icon-size);
+  height: var(--app-icon-size);
   border-radius: 10px;
   color: white;
   font-size: 13px;
@@ -388,8 +436,8 @@ body:not(.density-normal) .app-button {
 }
 
 body:not(.density-normal) .app-icon {
-  width: calc(34px * var(--ui-scale));
-  height: calc(34px * var(--ui-scale));
+  width: var(--app-icon-size);
+  height: var(--app-icon-size);
   border-radius: calc(10px * var(--ui-scale));
   font-size: calc(13px * var(--ui-scale));
 }
@@ -431,7 +479,7 @@ body:not(.density-normal) .notification-dot {
   display: grid;
   gap: 10px;
   margin-top: auto;
-  padding: 14px 12px 10px;
+  padding: 14px 12px;
 }
 
 .cookie-footer button {
@@ -443,6 +491,7 @@ body:not(.density-normal) .notification-dot {
 }
 
 .cookie-footer .cookie-add-app {
+  min-height: 58px;
   color: white;
   background: #4caf50;
   font-size: 18px;
@@ -987,6 +1036,31 @@ body:not(.density-normal) .modal {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
+}
+
+.range-grid {
+  display: grid;
+  gap: 14px;
+  max-width: 520px;
+}
+
+.range-grid label {
+  display: grid;
+  gap: 8px;
+  color: #666;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.range-grid label span {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.range-grid input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
 }
 
 .color-grid label {

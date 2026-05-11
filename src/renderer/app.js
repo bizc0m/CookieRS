@@ -19,6 +19,8 @@ const starterState = {
   settingsOpen: false,
   settingsSection: "general",
   maskUrl: false,
+  groupIconSize: 44,
+  appIconSize: 34,
   sidebarCollapsed: false,
   secretsHidden: false,
   showHiddenApps: false,
@@ -66,7 +68,14 @@ function migrateState(input) {
   next.settingsOpen = Boolean(next.settingsOpen);
   next.settingsSection ||= "general";
   next.maskUrl = Boolean(next.maskUrl);
-  next.sidebarCollapsed = Boolean(next.sidebarCollapsed);
+  next.groupIconSize = clampNumber(next.groupIconSize, 30, 72, 44);
+  next.appIconSize = clampNumber(next.appIconSize, 22, 58, 34);
+  if (!next.layoutV2Applied) {
+    next.sidebarCollapsed = false;
+    next.layoutV2Applied = true;
+  } else {
+    next.sidebarCollapsed = Boolean(next.sidebarCollapsed);
+  }
   next.secretsHidden = Boolean(next.secretsHidden);
   next.showHiddenApps = Boolean(next.showHiddenApps);
   next.workspaces = (next.workspaces || starterState.workspaces).map((workspace, index) => ({
@@ -103,6 +112,12 @@ function escapeHtml(value) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+function clampNumber(value, min, max, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(max, Math.max(min, number));
 }
 
 function normalizeUrl(value) {
@@ -196,6 +211,8 @@ function applyChromeSettings() {
   document.body.style.setProperty("--custom-cream", skin?.cream || "");
   document.body.style.setProperty("--custom-sidebar", skin?.sidebar || "");
   document.body.style.setProperty("--custom-accent", skin?.accent || "");
+  document.body.style.setProperty("--group-icon-size", `${state.groupIconSize}px`);
+  document.body.style.setProperty("--app-icon-size", `${state.appIconSize}px`);
 }
 
 function setDensity(density) {
@@ -242,6 +259,13 @@ function setSettingsSection(section) {
 
 function toggleMaskUrl() {
   state.maskUrl = !state.maskUrl;
+  saveState();
+  render();
+}
+
+function updateIconSize(kind, value) {
+  if (kind === "group") state.groupIconSize = clampNumber(value, 30, 72, 44);
+  if (kind === "app") state.appIconSize = clampNumber(value, 22, 58, 34);
   saveState();
   render();
 }
@@ -628,17 +652,22 @@ function render() {
   root.innerHTML = `
     <main class="${shellClasses}">
       <aside class="workspace-rail" aria-label="Workspaces">
-        ${state.workspaces
-          .map(
-            (item, index) => `
-              <button class="workspace-button ${item.id === workspace.id ? "active" : ""}" draggable="true" data-workspace="${item.id}" title="${escapeHtml(item.name)} - Cmd/Ctrl+${index + 1}" style="background:${item.id === workspace.id ? "var(--accent)" : escapeHtml(item.color)};--highlight:${escapeHtml(item.highlightColor || "transparent")}">
-                ${item.iconImage ? `<img src="${escapeHtml(item.iconImage)}" alt="" />` : escapeHtml(item.icon)}
-              </button>
-            `
-          )
-          .join("")}
+        <div class="workspace-list">
+          ${state.workspaces
+            .map(
+              (item, index) => `
+                <button class="workspace-button ${item.id === workspace.id ? "active" : ""}" draggable="true" data-workspace="${item.id}" title="${escapeHtml(item.name)} - Cmd/Ctrl+${index + 1}" style="background:${item.id === workspace.id ? "var(--accent)" : escapeHtml(item.color)};--highlight:${escapeHtml(item.highlightColor || "transparent")}">
+                  ${item.iconImage ? `<img src="${escapeHtml(item.iconImage)}" alt="" />` : escapeHtml(item.icon)}
+                </button>
+              `
+            )
+            .join("")}
+        </div>
         <div class="workspace-spacer"></div>
-        <button class="add-workspace" title="Propriétés du groupe actif" data-workspace-properties="${workspace.id}">⚙</button>
+        <div class="workspace-footer">
+          <button class="workspace-add-button" title="Ajouter un groupe" data-add-workspace><span>+</span><small>Groupe</small></button>
+          <button class="workspace-settings-button" title="Réglages" data-open-settings="general">⚙</button>
+        </div>
       </aside>
 
       <aside class="app-sidebar">
@@ -672,7 +701,6 @@ function render() {
           </div>
         </section>
         <div class="cookie-footer">
-          <button data-add-workspace>+ Groupe</button>
           <button class="cookie-add-app" data-open-modal>+ App</button>
         </div>
       </aside>
@@ -933,6 +961,27 @@ function renderSettingsSection() {
       </div>
       <div class="settings-card">
         <div>
+          <h3>Colonne apps compacte</h3>
+          <p>Affiche seulement les icônes des sites quand c'est activé.</p>
+        </div>
+        <button class="switch ${state.sidebarCollapsed ? "on" : ""}" data-toggle-sidebar><span></span></button>
+      </div>
+      <div class="settings-card column">
+        <h3>Taille des icônes</h3>
+        <p>Ajuste séparément la colonne groupes et la colonne apps.</p>
+        <div class="range-grid">
+          <label>
+            <span>Groupes <strong>${state.groupIconSize}px</strong></span>
+            <input type="range" min="30" max="72" step="1" value="${state.groupIconSize}" data-icon-size="group" />
+          </label>
+          <label>
+            <span>Apps <strong>${state.appIconSize}px</strong></span>
+            <input type="range" min="22" max="58" step="1" value="${state.appIconSize}" data-icon-size="app" />
+          </label>
+        </div>
+      </div>
+      <div class="settings-card">
+        <div>
           <h3>Donate</h3>
           <p>Emplacement réservé dans les réglages globaux.</p>
         </div>
@@ -1096,7 +1145,7 @@ function wireEvents() {
   });
   document.querySelector("[data-add-workspace]")?.addEventListener("click", addWorkspace);
 
-  document.querySelector("[data-toggle-sidebar]")?.addEventListener("click", toggleSidebar);
+  document.querySelectorAll("[data-toggle-sidebar]").forEach((button) => button.addEventListener("click", toggleSidebar));
   document.querySelector("[data-toggle-hidden-apps]")?.addEventListener("click", toggleHiddenApps);
   document.querySelectorAll("[data-open-settings]").forEach((button) => {
     button.addEventListener("click", () => openSettings(button.dataset.openSettings || "general"));
@@ -1118,6 +1167,9 @@ function wireEvents() {
     importConfig(event.target.files?.[0]);
   });
   document.querySelectorAll("[data-density]").forEach((button) => button.addEventListener("click", () => setDensity(button.dataset.density)));
+  document.querySelectorAll("[data-icon-size]").forEach((input) => {
+    input.addEventListener("input", () => updateIconSize(input.dataset.iconSize, input.value));
+  });
   document.querySelector("[data-skin]")?.addEventListener("change", (event) => setSkin(event.target.value));
 
   document.querySelectorAll("[data-app]").forEach((button) => {

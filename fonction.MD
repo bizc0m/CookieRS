@@ -8,6 +8,11 @@
 - Skin personnalisé par couleurs globales.
 - Barre latérale groupes et barre apps.
 - Colonne apps repliable en mode icônes seules.
+- Réglage pour passer la colonne apps en mode compacte ou labels visibles.
+- Bouton `+ Groupe` dans la colonne groupes.
+- Bouton `+ App` dans la colonne apps.
+- Réglage de taille des icônes groupes.
+- Réglage de taille des icônes apps.
 - Labels apps affichés sans URL secondaire.
 - Réglages globaux centralisés dans la roue de réglages.
 - Zone macOS ajustée pour les trois boutons système.
@@ -16,6 +21,7 @@
 
 - Groupes de colonne 1.
 - Ajout de groupe.
+- Bouton d'ajout placé en bas de la colonne groupes.
 - Propriétés groupe : nom, icône texte, image URL/upload, couleur, highlight.
 - Drag and drop des groupes.
 - Raccourcis groupes `Cmd/Ctrl+1..9`.
@@ -24,6 +30,7 @@
 ## Apps
 
 - Ajout d'app par nom et URL.
+- Bouton d'ajout placé en bas de la colonne apps.
 - Propriétés app : nom, URL, couleur icône, highlight, image URL/upload, notifications, compteur, cachée.
 - Drag and drop des apps.
 - Favicon automatique si aucune image custom.
