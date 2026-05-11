@@ -2,6 +2,13 @@
 
 ## 2026-05-11
 
+- Fusion visuelle des deux barres latérales en une sidebar compacte.
+- Ajout du support d'extensions Chrome unpacked.
+- Ajout d'un détecteur RSS/Atom par page.
+- Ajout du menu RSS dans le deuxième bouton et dans la toolbar.
+- Correction du partage depuis le deuxième bouton.
+- Centrage et élargissement du cadre de partage.
+- Compactage des barres navigateur/onglets.
 - Remise visible par défaut des labels de sites dans la colonne apps.
 - Ajout du réglage `Colonne apps compacte`.
 - Déplacement de `+ Groupe` dans la colonne groupes.

@@ -7,6 +7,7 @@
 - Skins : Biscuit, Dark, Mono, Custom.
 - Skin personnalisé par couleurs globales.
 - Barre latérale groupes et barre apps.
+- Sidebar unique compacte avec groupes et apps dans la même colonne.
 - Colonne apps repliable en mode icônes seules.
 - Réglage pour passer la colonne apps en mode compacte ou labels visibles.
 - Bouton `+ Groupe` dans la colonne groupes.
@@ -53,6 +54,20 @@
 - Barre URL.
 - Masquage de l'URL dans l'écran principal.
 - Ouverture dans le navigateur externe.
+- Barre navigateur et onglets compactées.
+
+## Chrome / extensions
+
+- Rendu web via Chromium/Electron.
+- Chargement d'extensions Chrome non empaquetées depuis les réglages.
+- Liste locale des extensions chargées.
+- Certaines APIs Chrome peuvent dépendre des limites Electron.
+
+## RSS
+
+- Détection automatique des liens RSS/Atom dans les pages.
+- Bouton RSS activé quand des flux sont trouvés.
+- Menu RSS ouvrant les flux détectés.
 
 ## Notifications
 
@@ -66,6 +81,7 @@
 
 - Bouton partage direct dans la toolbar.
 - Partage du texte sélectionné + URL.
+- Partage fonctionne aussi sans texte sélectionné, avec titre + URL.
 - Cibles : Copier, X, LinkedIn, Buffer, Mail.
 - Fonction partage intégrée au menu secondaire.
 
