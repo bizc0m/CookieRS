@@ -1,8 +1,63 @@
-import { app, BrowserWindow, clipboard, ipcMain, session, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, session, shell } from "electron";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+let permissionPolicy = {
+  notifications: "allow",
+  camera: "ask",
+  microphone: "ask",
+  media: "ask",
+  geolocation: "ask"
+};
+let downloadPolicy = {
+  askDownloadLocation: true,
+  downloadsPath: ""
+};
+const loadedExtensions = new Map();
+
+function permissionAllowed(permission) {
+  const mapped = permission === "media" ? permissionPolicy.media : permissionPolicy[permission];
+  if (mapped === "allow") return true;
+  if (mapped === "block") return false;
+  return permission === "notifications" && permissionPolicy.notifications === "allow";
+}
+
+function expandHome(value) {
+  const target = String(value || "").trim();
+  if (!target) return "";
+  return target.startsWith("~/") ? path.join(os.homedir(), target.slice(2)) : target;
+}
+
+async function loadExtensionFromPath(extensionPath) {
+  const target = expandHome(extensionPath);
+  if (!target || !fs.existsSync(path.join(target, "manifest.json"))) {
+    throw new Error("Dossier invalide: manifest.json introuvable.");
+  }
+  const existing = Array.from(loadedExtensions.values()).find((extension) => extension.path === target);
+  if (existing) {
+    return {
+      id: existing.id,
+      name: existing.name,
+      path: existing.path,
+      enabled: true,
+      status: "loaded",
+      error: ""
+    };
+  }
+  const extension = await session.defaultSession.loadExtension(target, { allowFileAccess: true });
+  loadedExtensions.set(extension.id, { ...extension, path: target });
+  return {
+    id: extension.id,
+    name: extension.name,
+    path: target,
+    enabled: true,
+    status: "loaded",
+    error: ""
+  };
+}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -27,7 +82,13 @@ function createWindow() {
 
 app.whenReady().then(() => {
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-    callback(permission === "notifications");
+    callback(permissionAllowed(permission));
+  });
+  session.defaultSession.on("will-download", (_event, item) => {
+    const directory = expandHome(downloadPolicy.downloadsPath);
+    if (!downloadPolicy.askDownloadLocation && directory) {
+      item.setSavePath(path.join(directory, item.getFilename()));
+    }
   });
 
   createWindow();
@@ -48,3 +109,40 @@ ipcMain.handle("open-external", async (_event, url) => {
 ipcMain.handle("copy-text", async (_event, text) => {
   clipboard.writeText(String(text || ""));
 });
+
+ipcMain.handle("set-permissions", async (_event, permissions) => {
+  permissionPolicy = { ...permissionPolicy, ...(permissions || {}) };
+  return permissionPolicy;
+});
+
+ipcMain.handle("set-preferences", async (_event, preferences) => {
+  downloadPolicy = { ...downloadPolicy, ...(preferences || {}) };
+  return downloadPolicy;
+});
+
+ipcMain.handle("choose-chrome-extension", async () => {
+  const result = await dialog.showOpenDialog({
+    title: "Choisir un dossier d'extension Chrome unpacked",
+    properties: ["openDirectory"]
+  });
+  if (result.canceled || !result.filePaths[0]) return null;
+  return loadExtensionFromPath(result.filePaths[0]);
+});
+
+ipcMain.handle("load-chrome-extension", async (_event, extensionPath) => {
+  return loadExtensionFromPath(extensionPath);
+});
+
+ipcMain.handle("unload-chrome-extension", async (_event, extensionId) => {
+  const id = String(extensionId || "");
+  if (!id || !loadedExtensions.has(id)) return { id, status: "not-loaded" };
+  session.defaultSession.removeExtension(id);
+  loadedExtensions.delete(id);
+  return { id, status: "disabled" };
+});
+
+ipcMain.handle("list-chrome-extensions", async () => Array.from(loadedExtensions.values()).map((extension) => ({
+  id: extension.id,
+  name: extension.name,
+  path: extension.path
+})));

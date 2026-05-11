@@ -8,6 +8,18 @@ const appCatalog = [
   { id: "chatgpt", name: "ChatGPT", url: "https://chatgpt.com", color: "#10a37f", notifications: true, notificationCount: 0 }
 ];
 
+const defaultWorkspaces = [
+  { id: "work", name: "Work", icon: "W", color: "#2f80ed" },
+  { id: "personal", name: "Personal", icon: "P", color: "#ffffff" },
+  { id: "focus", name: "Focus", icon: "F", color: "#e5484d" }
+];
+
+const defaultAppsByWorkspace = {
+  work: appCatalog.slice(0, 5),
+  personal: [appCatalog[3], appCatalog[6]],
+  focus: [appCatalog[4], appCatalog[5]]
+};
+
 const starterState = {
   density: "normal",
   skin: "biscuit",
@@ -21,21 +33,31 @@ const starterState = {
   maskUrl: false,
   groupIconSize: 44,
   appIconSize: 34,
+  downloadsPath: "",
+  askDownloadLocation: true,
+  globalNotifications: true,
+  notificationSound: false,
+  notificationBadges: true,
+  shortcutsEnabled: true,
+  compactShortcuts: false,
+  cameraPermission: "ask",
+  microphonePermission: "ask",
+  locationPermission: "ask",
+  fontScale: 100,
+  syncEnabled: false,
+  adBlockEnabled: false,
+  chromeExtensions: [],
+  rssFeedsByTab: {},
   sidebarCollapsed: false,
   secretsHidden: false,
   showHiddenApps: false,
-  workspaces: [
-    { id: "work", name: "Work", icon: "W", color: "#e16f43" },
-    { id: "personal", name: "Personal", icon: "P", color: "#f8f3ea" }
-  ],
+  workspaces: defaultWorkspaces,
   activeWorkspaceId: "work",
-  appsByWorkspace: {
-    work: appCatalog.slice(0, 5),
-    personal: [appCatalog[3], appCatalog[6]]
-  },
+  appsByWorkspace: defaultAppsByWorkspace,
   activeAppByWorkspace: {
     work: "gmail",
-    personal: "notion"
+    personal: "notion",
+    focus: "calendar"
   },
   tabsByApp: {}
 };
@@ -48,8 +70,11 @@ let propertiesAppId = null;
 let propertiesWorkspaceId = null;
 let shareDraft = null;
 let pageMenu = null;
+let chromeExtensionsRestored = false;
+let rssMenu = false;
 
 const root = document.getElementById("app");
+setLaunchDefault();
 
 function loadState() {
   try {
@@ -70,20 +95,56 @@ function migrateState(input) {
   next.maskUrl = Boolean(next.maskUrl);
   next.groupIconSize = clampNumber(next.groupIconSize, 30, 72, 44);
   next.appIconSize = clampNumber(next.appIconSize, 22, 58, 34);
+  next.downloadsPath ||= "";
+  next.askDownloadLocation = next.askDownloadLocation !== false;
+  next.globalNotifications = next.globalNotifications !== false;
+  next.notificationSound = Boolean(next.notificationSound);
+  next.notificationBadges = next.notificationBadges !== false;
+  next.shortcutsEnabled = next.shortcutsEnabled !== false;
+  next.compactShortcuts = Boolean(next.compactShortcuts);
+  next.cameraPermission = normalizePermission(next.cameraPermission);
+  next.microphonePermission = normalizePermission(next.microphonePermission);
+  next.locationPermission = normalizePermission(next.locationPermission);
+  next.fontScale = clampNumber(next.fontScale, 80, 130, 100);
+  next.syncEnabled = Boolean(next.syncEnabled);
+  next.adBlockEnabled = Boolean(next.adBlockEnabled);
+  next.chromeExtensions = (next.chromeExtensions || []).map((extension) => ({
+    id: "",
+    name: "Extension Chrome",
+    path: "",
+    enabled: true,
+    status: "pending",
+    error: "",
+    ...extension
+  })).filter((extension) => extension.path);
+  next.rssFeedsByTab ||= {};
   if (!next.layoutV2Applied) {
     next.sidebarCollapsed = false;
     next.layoutV2Applied = true;
   } else {
     next.sidebarCollapsed = Boolean(next.sidebarCollapsed);
   }
+  if (!next.layoutV3Applied) {
+    next.sidebarCollapsed = false;
+    next.layoutV3Applied = true;
+  }
   next.secretsHidden = Boolean(next.secretsHidden);
   next.showHiddenApps = Boolean(next.showHiddenApps);
-  next.workspaces = (next.workspaces || starterState.workspaces).map((workspace, index) => ({
-    color: index === 0 ? "#e16f43" : "#f8f3ea",
+  next.workspaces = ensureDefaultWorkspaces(next.workspaces || starterState.workspaces).map((workspace, index) => ({
+    color: defaultWorkspaces[index]?.color || "#f8f3ea",
     highlightColor: "",
     iconImage: "",
     ...workspace
   }));
+  defaultWorkspaces.forEach((workspace, index) => {
+    next.workspaces[index].color = workspace.color;
+  });
+  next.appsByWorkspace ||= {};
+  defaultWorkspaces.forEach((workspace) => {
+    if (!Array.isArray(next.appsByWorkspace[workspace.id]) || !next.appsByWorkspace[workspace.id].length) {
+      next.appsByWorkspace[workspace.id] = structuredClone(defaultAppsByWorkspace[workspace.id] || []);
+    }
+  });
   Object.keys(next.appsByWorkspace || {}).forEach((workspaceId) => {
     next.appsByWorkspace[workspaceId] = next.appsByWorkspace[workspaceId].map((app) => ({
       notifications: true,
@@ -95,11 +156,30 @@ function migrateState(input) {
       ...app
     }));
   });
+  next.activeWorkspaceId = next.workspaces.some((workspace) => workspace.id === next.activeWorkspaceId) ? next.activeWorkspaceId : next.workspaces[0]?.id;
+  next.activeAppByWorkspace ||= {};
+  next.workspaces.forEach((workspace) => {
+    const apps = next.appsByWorkspace[workspace.id] || [];
+    if (!apps.some((app) => app.id === next.activeAppByWorkspace[workspace.id])) {
+      next.activeAppByWorkspace[workspace.id] = apps[0]?.id || null;
+    }
+  });
   next.tabsByApp ||= {};
   Object.keys(next.tabsByApp).forEach((appId) => {
     next.tabsByApp[appId] = next.tabsByApp[appId].map((tab) => ({ secret: false, ...tab }));
   });
   return next;
+}
+
+function ensureDefaultWorkspaces(workspaces) {
+  const byId = new Map((workspaces || []).map((workspace) => [workspace.id, workspace]));
+  const merged = defaultWorkspaces.map((workspace) => ({ ...workspace, ...(byId.get(workspace.id) || {}) }));
+  const extras = (workspaces || []).filter((workspace) => !defaultWorkspaces.some((item) => item.id === workspace.id));
+  return [...merged, ...extras];
+}
+
+function normalizePermission(value) {
+  return ["ask", "allow", "block"].includes(value) ? value : "ask";
 }
 
 function saveState() {
@@ -213,6 +293,7 @@ function applyChromeSettings() {
   document.body.style.setProperty("--custom-accent", skin?.accent || "");
   document.body.style.setProperty("--group-icon-size", `${state.groupIconSize}px`);
   document.body.style.setProperty("--app-icon-size", `${state.appIconSize}px`);
+  document.body.style.setProperty("--font-scale", `${state.fontScale / 100}`);
 }
 
 function setDensity(density) {
@@ -257,6 +338,37 @@ function setSettingsSection(section) {
   render();
 }
 
+function setLaunchDefault() {
+  const workspace = state.workspaces[0];
+  if (!workspace) return;
+  state.settingsOpen = false;
+  state.activeWorkspaceId = workspace.id;
+  const app = (state.appsByWorkspace[workspace.id] || [])[0];
+  if (app) state.activeAppByWorkspace[workspace.id] = app.id;
+  activeTabId = null;
+}
+
+function updateSetting(key, value) {
+  state[key] = value;
+  saveState();
+  syncNativeSettings();
+  render();
+}
+
+function syncNativeSettings() {
+  window.cookiers?.setPermissions?.({
+    notifications: state.globalNotifications ? "allow" : "block",
+    camera: state.cameraPermission,
+    microphone: state.microphonePermission,
+    media: state.cameraPermission === "block" || state.microphonePermission === "block" ? "block" : "ask",
+    geolocation: state.locationPermission
+  });
+  window.cookiers?.setPreferences?.({
+    askDownloadLocation: state.askDownloadLocation,
+    downloadsPath: state.downloadsPath
+  });
+}
+
 function toggleMaskUrl() {
   state.maskUrl = !state.maskUrl;
   saveState();
@@ -294,6 +406,15 @@ function selectWorkspaceByOffset(offset) {
 function selectApp(id) {
   state.activeAppByWorkspace[state.activeWorkspaceId] = id;
   activeTabId = visibleTabsFor(id)[0]?.id || null;
+  closeMenus();
+  saveState();
+  render();
+}
+
+function selectWorkspaceApp(workspaceId, appId) {
+  state.activeWorkspaceId = workspaceId;
+  state.activeAppByWorkspace[workspaceId] = appId;
+  activeTabId = visibleTabsFor(appId)[0]?.id || null;
   closeMenus();
   saveState();
   render();
@@ -550,11 +671,12 @@ function densityLabel(value) {
 }
 
 function notificationBadge(app) {
-  if (!app.notifications || !app.notificationCount) return "";
+  if (!state.notificationBadges || !app.notifications || !app.notificationCount) return "";
   return `<span class="notification-badge">${app.notificationCount > 99 ? "99+" : app.notificationCount}</span>`;
 }
 
 function incrementNotification(appId) {
+  if (!state.globalNotifications) return;
   const app = findApp(appId);
   if (!app || !app.notifications) return;
   app.notificationCount = Number(app.notificationCount || 0) + 1;
@@ -588,6 +710,108 @@ function installNotificationHook(webview) {
   webview.executeJavaScript(script).catch(() => {});
 }
 
+function applyWebviewFilters(webview) {
+  if (!state.adBlockEnabled) return;
+  webview.insertCSS(`
+    [id*="ad-"], [class*=" ad-"], [class^="ad-"], [class*=" ads"],
+    iframe[src*="doubleclick"], iframe[src*="googlesyndication"],
+    [aria-label*="advertisement" i], [aria-label*="publicité" i] {
+      display: none !important;
+    }
+  `).catch(() => {});
+}
+
+async function detectRssFeeds(webview) {
+  const tabId = webview.dataset.tabId;
+  if (!tabId) return;
+  let feeds = [];
+  try {
+    feeds = await webview.executeJavaScript(`
+      Array.from(document.querySelectorAll('link[rel~="alternate"]'))
+        .filter((link) => /rss|atom|xml/i.test(link.type || link.href || ""))
+        .map((link) => ({
+          title: link.title || document.title || "RSS",
+          url: new URL(link.href, location.href).href,
+          type: link.type || "feed"
+        }))
+    `);
+  } catch {
+    feeds = [];
+  }
+  state.rssFeedsByTab[tabId] = Array.isArray(feeds) ? feeds : [];
+  saveState();
+  render();
+}
+
+function rssFeedsForActiveTab() {
+  const tab = getActiveTab();
+  return tab ? state.rssFeedsByTab[tab.id] || [] : [];
+}
+
+async function loadChromeExtension() {
+  try {
+    const extension = await window.cookiers.chooseChromeExtension();
+    if (!extension) return;
+    state.chromeExtensions = [
+      ...state.chromeExtensions.filter((item) => item.id !== extension.id),
+      extension
+    ];
+    saveState();
+    render();
+  } catch (error) {
+    alert(`Extension Chrome non chargée: ${error?.message || error}`);
+  }
+}
+
+async function restoreChromeExtensions() {
+  if (chromeExtensionsRestored) return;
+  chromeExtensionsRestored = true;
+  let changed = false;
+  for (const extension of state.chromeExtensions.filter((item) => item.enabled)) {
+    try {
+      const loaded = await window.cookiers.loadChromeExtension(extension.path);
+      Object.assign(extension, loaded);
+    } catch (error) {
+      extension.status = "error";
+      extension.error = error?.message || String(error);
+    }
+    changed = true;
+  }
+  if (changed) {
+    saveState();
+    render();
+  }
+}
+
+async function setChromeExtensionEnabled(extensionId, enabled) {
+  const extension = state.chromeExtensions.find((item) => item.id === extensionId);
+  if (!extension) return;
+  extension.enabled = enabled;
+  try {
+    if (enabled) {
+      const loaded = await window.cookiers.loadChromeExtension(extension.path);
+      Object.assign(extension, loaded);
+    } else {
+      await window.cookiers.unloadChromeExtension(extension.id);
+      extension.status = "disabled";
+      extension.error = "";
+    }
+  } catch (error) {
+    extension.status = "error";
+    extension.error = error?.message || String(error);
+  }
+  saveState();
+  render();
+}
+
+async function removeChromeExtension(extensionId) {
+  const extension = state.chromeExtensions.find((item) => item.id === extensionId);
+  if (extension?.id) await window.cookiers.unloadChromeExtension(extension.id).catch(() => {});
+  state.chromeExtensions = state.chromeExtensions.filter((item) => item.id !== extensionId);
+  saveState();
+  render();
+}
+
 function parseNotificationCount(title) {
   const match = String(title || "").match(/^\((\d+)\)/);
   return match ? Number(match[1]) : 0;
@@ -596,9 +820,9 @@ function parseNotificationCount(title) {
 async function openShareModal() {
   const tab = getActiveTab();
   const webview = document.querySelector("webview.active");
-  if (!tab || !webview) return;
+  if (!tab) return;
   let selectedText = "";
-  try {
+  if (webview) try {
     selectedText = await webview.executeJavaScript("String(window.getSelection && window.getSelection().toString() || '')");
   } catch {
     selectedText = "";
@@ -637,6 +861,7 @@ function closeMenus() {
   contextMenu = null;
   workspaceMenu = null;
   pageMenu = null;
+  rssMenu = false;
 }
 
 function render() {
@@ -647,60 +872,50 @@ function render() {
   const tabs = app ? tabsFor(app.id) : [];
   const visibleTabs = app ? visibleTabsFor(app.id) : [];
   const tab = getActiveTab();
+  const rssFeeds = rssFeedsForActiveTab();
   const shellClasses = ["shell", state.sidebarCollapsed ? "sidebar-icons" : "", state.secretsHidden ? "secrets-hidden" : "", state.maskUrl ? "url-masked" : ""].filter(Boolean).join(" ");
 
   root.innerHTML = `
     <main class="${shellClasses}">
-      <aside class="workspace-rail" aria-label="Workspaces">
-        <div class="workspace-list">
-          ${state.workspaces
-            .map(
-              (item, index) => `
-                <button class="workspace-button ${item.id === workspace.id ? "active" : ""}" draggable="true" data-workspace="${item.id}" title="${escapeHtml(item.name)} - Cmd/Ctrl+${index + 1}" style="background:${item.id === workspace.id ? "var(--accent)" : escapeHtml(item.color)};--highlight:${escapeHtml(item.highlightColor || "transparent")}">
-                  ${item.iconImage ? `<img src="${escapeHtml(item.iconImage)}" alt="" />` : escapeHtml(item.icon)}
-                </button>
-              `
-            )
-            .join("")}
-        </div>
-        <div class="workspace-spacer"></div>
-        <div class="workspace-footer">
-          <button class="workspace-add-button" title="Ajouter un groupe" data-add-workspace><span>+</span><small>Groupe</small></button>
-          <button class="workspace-settings-button" title="Réglages" data-open-settings="general">⚙</button>
-        </div>
-      </aside>
-
-      <aside class="app-sidebar">
-        <header class="brand cookie-brand">
-          <div class="brand-copy">
-            <div class="brand-title">${escapeHtml(workspace.name)}</div>
-          </div>
-          <button class="collapse-button" data-toggle-sidebar title="Réduire la colonne apps">${state.sidebarCollapsed ? "›" : "‹"}</button>
-        </header>
-
+      <aside class="app-sidebar unified-sidebar">
         <section class="sidebar-section">
-          <div class="app-list">
-            ${apps
-              .map((item) => {
-                const icon = item.iconImage || faviconUrl(item.url);
-                return `
-                  <button class="app-button cookie-app ${app?.id === item.id ? "active" : ""} ${item.hidden ? "hidden-app" : ""}" draggable="true" data-app="${item.id}" data-menu-app="${item.id}" title="${escapeHtml(item.name)}" style="--highlight:${escapeHtml(item.highlightColor || "transparent")}">
-                    <span class="app-icon-wrap">
-                      <span class="app-icon" style="background:${escapeHtml(item.color)}">
-                        ${icon ? `<img src="${escapeHtml(icon)}" alt="" />` : escapeHtml(iconText(item.name))}
-                      </span>
-                      ${notificationBadge(item)}
-                    </span>
-                    <span class="app-copy">
-                      <span class="app-name">${escapeHtml(item.name)}</span>
-                    </span>
+          ${state.workspaces
+            .map((group, groupIndex) => {
+              const groupApps = (state.appsByWorkspace[group.id] || []).filter((item) => state.showHiddenApps || !item.hidden);
+              return `
+                <div class="unified-group">
+                  <button class="unified-group-title ${group.id === workspace.id ? "active" : ""}" draggable="true" data-workspace="${group.id}" title="${escapeHtml(group.name)} - Cmd/Ctrl+${groupIndex + 1}">
+                    ${escapeHtml(group.name)}${groupApps.length ? `(${groupApps.length})` : ""}
                   </button>
-                `;
-              })
-              .join("")}
-          </div>
+                  <div class="app-list">
+                    ${groupApps
+                      .map((item) => {
+                        const icon = item.iconImage || faviconUrl(item.url);
+                        const active = group.id === workspace.id && app?.id === item.id;
+                        return `
+                          <button class="app-button cookie-app ${active ? "active" : ""} ${item.hidden ? "hidden-app" : ""}" draggable="true" data-workspace-app="${group.id}:${item.id}" data-app="${item.id}" title="${escapeHtml(item.name)}" style="--highlight:${escapeHtml(item.highlightColor || "transparent")}">
+                            <span class="app-icon-wrap">
+                              <span class="app-icon" style="background:${escapeHtml(item.color)}">
+                                ${icon ? `<img src="${escapeHtml(icon)}" alt="" />` : escapeHtml(iconText(item.name))}
+                              </span>
+                              ${notificationBadge(item)}
+                            </span>
+                            <span class="app-copy">
+                              <span class="app-name">${escapeHtml(item.name)}</span>
+                            </span>
+                          </button>
+                        `;
+                      })
+                      .join("")}
+                  </div>
+                </div>
+              `;
+            })
+            .join("")}
         </section>
         <div class="cookie-footer">
+          <button data-add-workspace>+ Groupe</button>
+          <button data-open-settings="general">⚙ Réglages</button>
           <button class="cookie-add-app" data-open-modal>+ App</button>
         </div>
       </aside>
@@ -719,6 +934,7 @@ function render() {
           <div class="right-controls">
             <button class="icon-button" data-new-tab title="Nouvel onglet">+</button>
             <button class="icon-button" data-share title="Partager sélection + URL">⇪</button>
+            <button class="icon-button ${rssFeeds.length ? "armed" : ""}" data-rss-menu title="RSS détecté">${rssFeeds.length ? "RSS" : "RSS"}</button>
             <button class="icon-button" data-page-menu title="Menu contextuel">☰</button>
             <button class="icon-button" data-open-settings="general" title="Paramètres">⚙</button>
             <button class="icon-button" data-external title="Ouvrir dans le navigateur">↗</button>
@@ -772,6 +988,7 @@ function render() {
     ${renderContextMenu()}
     ${renderWorkspaceMenu()}
     ${renderPageMenu()}
+    ${renderRssMenu()}
   `;
 
   wireEvents();
@@ -996,7 +1213,124 @@ function renderSettingsSection() {
           <h3>Activer le bloqueur de publicités</h3>
           <p>Emplacement prévu pour listes de filtres intégrées.</p>
         </div>
-        <button class="switch"><span></span></button>
+        <button class="switch ${state.adBlockEnabled ? "on" : ""}" data-setting-toggle="adBlockEnabled"><span></span></button>
+      </div>
+      <div class="settings-card column">
+        <div class="settings-card-head">
+          <div>
+            <h3>Extensions Chrome locales</h3>
+            <p>Charge des extensions unpacked compatibles Chromium depuis un dossier local.</p>
+          </div>
+          <button class="primary" type="button" data-add-chrome-extension>Ajouter un dossier</button>
+        </div>
+        <div class="extension-list">
+          ${
+            state.chromeExtensions.length
+              ? state.chromeExtensions.map(renderChromeExtensionRow).join("")
+              : `<div class="empty-settings">Aucune extension chargée.</div>`
+          }
+        </div>
+      </div>
+    `;
+  }
+  if (state.settingsSection === "downloads") {
+    return `
+      <div class="settings-card">
+        <div>
+          <h3>Demander où enregistrer</h3>
+          <p>Active une confirmation avant chaque téléchargement.</p>
+        </div>
+        <button class="switch ${state.askDownloadLocation ? "on" : ""}" data-setting-toggle="askDownloadLocation"><span></span></button>
+      </div>
+      <div class="settings-card column">
+        <h3>Dossier par défaut</h3>
+        <p>Chemin mémorisé pour la configuration utilisateur.</p>
+        <input class="settings-input" data-setting-text="downloadsPath" value="${escapeHtml(state.downloadsPath)}" placeholder="Ex: ~/Downloads" />
+      </div>
+    `;
+  }
+  if (state.settingsSection === "notifications") {
+    return `
+      <div class="settings-card">
+        <div>
+          <h3>Notifications globales</h3>
+          <p>Autorise ou bloque les notifications des apps web.</p>
+        </div>
+        <button class="switch ${state.globalNotifications ? "on" : ""}" data-setting-toggle="globalNotifications"><span></span></button>
+      </div>
+      <div class="settings-card">
+        <div>
+          <h3>Badges sur les apps</h3>
+          <p>Affiche les compteurs de notifications sur les icônes.</p>
+        </div>
+        <button class="switch ${state.notificationBadges ? "on" : ""}" data-setting-toggle="notificationBadges"><span></span></button>
+      </div>
+      <div class="settings-card">
+        <div>
+          <h3>Son de notification</h3>
+          <p>Option mémorisée pour une intégration sonore ultérieure.</p>
+        </div>
+        <button class="switch ${state.notificationSound ? "on" : ""}" data-setting-toggle="notificationSound"><span></span></button>
+      </div>
+    `;
+  }
+  if (state.settingsSection === "shortcuts") {
+    return `
+      <div class="settings-card">
+        <div>
+          <h3>Raccourcis clavier</h3>
+          <p>Cmd/Ctrl+1..9, Alt+flèches et onglets secrets.</p>
+        </div>
+        <button class="switch ${state.shortcutsEnabled ? "on" : ""}" data-setting-toggle="shortcutsEnabled"><span></span></button>
+      </div>
+      <div class="settings-card">
+        <div>
+          <h3>Aide compacte</h3>
+          <p>Mémorise l'affichage réduit des indications de raccourcis.</p>
+        </div>
+        <button class="switch ${state.compactShortcuts ? "on" : ""}" data-setting-toggle="compactShortcuts"><span></span></button>
+      </div>
+    `;
+  }
+  if (state.settingsSection === "permissions") {
+    return `
+      <div class="settings-card column">
+        <h3>Autorisations sites web</h3>
+        <p>Choisis le comportement par défaut pour les apps embarquées.</p>
+        <div class="settings-select-grid">
+          ${permissionSelect("cameraPermission", "Caméra")}
+          ${permissionSelect("microphonePermission", "Micro")}
+          ${permissionSelect("locationPermission", "Localisation")}
+        </div>
+      </div>
+    `;
+  }
+  if (state.settingsSection === "fonts") {
+    return `
+      <div class="settings-card column">
+        <h3>Taille du texte</h3>
+        <p>Ajuste la lisibilité globale sans changer la taille des onglets.</p>
+        <div class="range-grid">
+          <label>
+            <span>Interface <strong>${state.fontScale}%</strong></span>
+            <input type="range" min="80" max="130" step="5" value="${state.fontScale}" data-setting-range="fontScale" />
+          </label>
+        </div>
+      </div>
+    `;
+  }
+  if (state.settingsSection === "sync") {
+    return `
+      <div class="settings-card">
+        <div>
+          <h3>Sync locale</h3>
+          <p>Prépare la synchronisation future via fichier ou compte utilisateur.</p>
+        </div>
+        <button class="switch ${state.syncEnabled ? "on" : ""}" data-setting-toggle="syncEnabled"><span></span></button>
+      </div>
+      <div class="settings-card column">
+        <h3>État sync</h3>
+        <p>${state.syncEnabled ? "Sync activée côté configuration. Aucun compte distant n'est connecté." : "Sync désactivée. Les données restent dans cette installation."}</p>
       </div>
     `;
   }
@@ -1046,6 +1380,41 @@ function renderSettingsSection() {
   `;
 }
 
+function permissionSelect(key, label) {
+  const value = normalizePermission(state[key]);
+  return `
+    <label>
+      <span>${label}</span>
+      <select data-setting-select="${key}">
+        <option value="ask" ${value === "ask" ? "selected" : ""}>Demander</option>
+        <option value="allow" ${value === "allow" ? "selected" : ""}>Autoriser</option>
+        <option value="block" ${value === "block" ? "selected" : ""}>Bloquer</option>
+      </select>
+    </label>
+  `;
+}
+
+function renderChromeExtensionRow(extension) {
+  const statusLabel = {
+    loaded: "chargée",
+    pending: "en attente",
+    disabled: "désactivée",
+    error: "erreur"
+  }[extension.status] || extension.status;
+  return `
+    <div class="extension-row">
+      <div class="extension-main">
+        <strong>${escapeHtml(extension.name || "Extension Chrome")}</strong>
+        <small>${escapeHtml(extension.path)}</small>
+        ${extension.error ? `<em>${escapeHtml(extension.error)}</em>` : ""}
+      </div>
+      <span class="extension-status ${escapeHtml(extension.status)}">${escapeHtml(statusLabel)}</span>
+      <button class="switch ${extension.enabled ? "on" : ""}" data-toggle-chrome-extension="${escapeHtml(extension.id)}"><span></span></button>
+      <button class="secondary" type="button" data-remove-chrome-extension="${escapeHtml(extension.id)}">Retirer</button>
+    </div>
+  `;
+}
+
 function itemsLabel(id) {
   return {
     downloads: "Téléchargements",
@@ -1061,6 +1430,7 @@ function renderPageMenu() {
   if (!pageMenu) return "";
   const tab = getActiveTab();
   const app = activeApp();
+  const feeds = rssFeedsForActiveTab();
   return `
     <div class="context-menu page-menu" style="right:22px;top:72px">
       <div class="context-label">Page</div>
@@ -1068,6 +1438,7 @@ function renderPageMenu() {
       <button data-page-action="forward">Avant</button>
       <button data-page-action="reload">Recharger</button>
       <button data-page-action="share">Partager sélection + URL</button>
+      <button data-page-action="rss">${feeds.length ? `RSS détecté (${feeds.length})` : "Détecter RSS"}</button>
       <button data-page-action="secret">${tab?.secret ? "Retirer secret" : "Onglet secret"}</button>
       <button data-page-action="hide-secrets">${state.secretsHidden ? "Afficher secrets" : "Cacher secrets"}</button>
       <button data-page-action="mask-url">${state.maskUrl ? "Afficher URL" : "Masquer URL"}</button>
@@ -1086,6 +1457,21 @@ function renderPageMenu() {
       <button data-page-action="workspace-properties">Propriétés groupe</button>
       <button data-page-action="workspace-previous">Groupe précédent</button>
       <button data-page-action="workspace-next">Groupe suivant</button>
+    </div>
+  `;
+}
+
+function renderRssMenu() {
+  if (!rssMenu) return "";
+  const feeds = rssFeedsForActiveTab();
+  return `
+    <div class="context-menu rss-menu" style="right:76px;top:72px">
+      <div class="context-label">RSS</div>
+      ${
+        feeds.length
+          ? feeds.map((feed, index) => `<button data-rss-open="${index}">${escapeHtml(feed.title || feed.type || "Flux RSS")}</button>`).join("")
+          : `<button type="button">Aucun flux détecté</button>`
+      }
     </div>
   `;
 }
@@ -1171,9 +1557,28 @@ function wireEvents() {
     input.addEventListener("input", () => updateIconSize(input.dataset.iconSize, input.value));
   });
   document.querySelector("[data-skin]")?.addEventListener("change", (event) => setSkin(event.target.value));
+  document.querySelectorAll("[data-setting-toggle]").forEach((button) => {
+    button.addEventListener("click", () => updateSetting(button.dataset.settingToggle, !state[button.dataset.settingToggle]));
+  });
+  document.querySelectorAll("[data-setting-text]").forEach((input) => {
+    input.addEventListener("change", () => updateSetting(input.dataset.settingText, input.value));
+  });
+  document.querySelectorAll("[data-setting-select]").forEach((select) => {
+    select.addEventListener("change", () => updateSetting(select.dataset.settingSelect, normalizePermission(select.value)));
+  });
+  document.querySelectorAll("[data-setting-range]").forEach((input) => {
+    input.addEventListener("input", () => updateSetting(input.dataset.settingRange, clampNumber(input.value, 80, 130, 100)));
+  });
 
   document.querySelectorAll("[data-app]").forEach((button) => {
-    button.addEventListener("click", () => selectApp(button.dataset.app));
+    button.addEventListener("click", () => {
+      if (button.dataset.workspaceApp) {
+        const [workspaceId, appId] = button.dataset.workspaceApp.split(":");
+        selectWorkspaceApp(workspaceId, appId);
+        return;
+      }
+      selectApp(button.dataset.app);
+    });
     button.addEventListener("dragstart", (event) => {
       event.dataTransfer.setData("text/cookiers-app", button.dataset.app);
     });
@@ -1184,6 +1589,11 @@ function wireEvents() {
     });
     button.addEventListener("contextmenu", (event) => {
       event.preventDefault();
+      if (button.dataset.workspaceApp) {
+        const [workspaceId, appId] = button.dataset.workspaceApp.split(":");
+        state.activeWorkspaceId = workspaceId;
+        state.activeAppByWorkspace[workspaceId] = appId;
+      }
       contextMenu = { appId: button.dataset.app, x: event.clientX, y: event.clientY };
       workspaceMenu = null;
       state.activeAppByWorkspace[state.activeWorkspaceId] = button.dataset.app;
@@ -1206,9 +1616,34 @@ function wireEvents() {
   document.querySelector("[data-page-menu]")?.addEventListener("click", (event) => {
     event.stopPropagation();
     pageMenu = pageMenu ? null : true;
+    rssMenu = false;
+    render();
+  });
+  document.querySelector("[data-rss-menu]")?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    rssMenu = !rssMenu;
+    pageMenu = false;
     render();
   });
   document.querySelector("[data-share]")?.addEventListener("click", openShareModal);
+  document.querySelector("[data-add-chrome-extension]")?.addEventListener("click", loadChromeExtension);
+  document.querySelectorAll("[data-toggle-chrome-extension]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const extension = state.chromeExtensions.find((item) => item.id === button.dataset.toggleChromeExtension);
+      if (extension) setChromeExtensionEnabled(extension.id, !extension.enabled);
+    });
+  });
+  document.querySelectorAll("[data-remove-chrome-extension]").forEach((button) => {
+    button.addEventListener("click", () => removeChromeExtension(button.dataset.removeChromeExtension));
+  });
+  document.querySelectorAll("[data-rss-open]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const feed = rssFeedsForActiveTab()[Number(button.dataset.rssOpen)];
+      if (feed?.url) window.cookiers.openExternal(feed.url);
+      closeMenus();
+      render();
+    });
+  });
   document.querySelector("[data-open-properties]")?.addEventListener("click", () => {
     propertiesAppId = activeApp()?.id || null;
     render();
@@ -1235,9 +1670,19 @@ function wireEvents() {
   });
 
   document.querySelectorAll("webview").forEach((webview) => {
-    webview.addEventListener("dom-ready", () => installNotificationHook(webview));
-    webview.addEventListener("did-navigate", () => syncWebview(webview));
-    webview.addEventListener("did-navigate-in-page", () => syncWebview(webview));
+    webview.addEventListener("dom-ready", () => {
+      installNotificationHook(webview);
+      applyWebviewFilters(webview);
+      detectRssFeeds(webview);
+    });
+    webview.addEventListener("did-navigate", () => {
+      syncWebview(webview);
+      detectRssFeeds(webview);
+    });
+    webview.addEventListener("did-navigate-in-page", () => {
+      syncWebview(webview);
+      detectRssFeeds(webview);
+    });
     webview.addEventListener("page-title-updated", (event) => updateWebviewTitle(webview, event.title));
     webview.addEventListener("console-message", (event) => {
       if (String(event.message || "").startsWith("__COOKIERS_NOTIFICATION__")) {
@@ -1265,6 +1710,7 @@ function wireEvents() {
 
 function wireShortcuts() {
   document.onkeydown = (event) => {
+    if (!state.shortcutsEnabled) return;
     const mod = event.metaKey || event.ctrlKey;
     if (!mod) return;
     const number = Number(event.key);
@@ -1433,6 +1879,10 @@ function wirePageMenu() {
       if (action === "forward" && webview?.canGoForward()) webview.goForward();
       if (action === "reload") webview?.reload();
       if (action === "share") openShareModal();
+      if (action === "rss") {
+        rssMenu = true;
+        render();
+      }
       if (action === "secret") toggleActiveTabSecret();
       if (action === "hide-secrets") toggleSecretsHidden();
       if (action === "mask-url") toggleMaskUrl();
@@ -1466,7 +1916,7 @@ function wirePageMenu() {
       }
       if (action === "workspace-previous") selectWorkspaceByOffset(-1);
       if (action === "workspace-next") selectWorkspaceByOffset(1);
-      if (!["share", "secret", "hide-secrets", "mask-url", "properties", "app-notifications", "app-hidden", "app-clear-count", "app-delete", "workspace-properties", "workspace-previous", "workspace-next"].includes(action)) {
+      if (!["share", "rss", "secret", "hide-secrets", "mask-url", "properties", "app-notifications", "app-hidden", "app-clear-count", "app-delete", "workspace-properties", "workspace-previous", "workspace-next"].includes(action)) {
         closeMenus();
         render();
       }
@@ -1497,4 +1947,6 @@ function syncWebview(webview) {
   if (input) input.value = tab.url;
 }
 
+syncNativeSettings();
 render();
+restoreChromeExtensions();
