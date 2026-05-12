@@ -1,8 +1,8 @@
 {
-  "name": "cookiers",
+  "name": "crokETT",
   "version": "0.2.0",
   "description": "Open-source Biscuit-like desktop browser for organizing web apps by workspace.",
-  "author": "CookieRS contributors",
+  "author": "CrokETT contributors",
   "main": "src/main.js",
   "license": "MIT",
   "type": "module",
@@ -18,8 +18,8 @@
     "build:linux": "electron-builder --linux"
   },
   "build": {
-    "appId": "dev.cookiers.app",
-    "productName": "CookieRS",
+    "appId": "dev.crokETT.app",
+    "productName": "CrokETT",
     "asar": true,
     "compression": "maximum",
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",

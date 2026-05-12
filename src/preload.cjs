@@ -1,7 +1,8 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
-contextBridge.exposeInMainWorld("cookiers", {
+contextBridge.exposeInMainWorld("crokETT", {
   openExternal: (url) => ipcRenderer.invoke("open-external", url),
+  openNewWindow: (url) => ipcRenderer.invoke("open-new-window", url),
   copyText: (text) => ipcRenderer.invoke("copy-text", text),
   setPermissions: (permissions) => ipcRenderer.invoke("set-permissions", permissions),
   setPreferences: (preferences) => ipcRenderer.invoke("set-preferences", preferences),

@@ -1,2014 +1,1482 @@
+// ── CATALOG & DEFAULTS ──────────────────────────────────────────────────────
+
 const appCatalog = [
-  { id: "gmail", name: "Gmail", url: "https://mail.google.com", color: "#d94f43", notifications: true, notificationCount: 0 },
-  { id: "github", name: "GitHub", url: "https://github.com", color: "#24292f", notifications: true, notificationCount: 0 },
-  { id: "slack", name: "Slack", url: "https://slack.com/signin", color: "#4a154b", notifications: true, notificationCount: 0 },
-  { id: "notion", name: "Notion", url: "https://www.notion.so", color: "#111111", notifications: true, notificationCount: 0 },
-  { id: "calendar", name: "Calendar", url: "https://calendar.google.com", color: "#3478f6", notifications: true, notificationCount: 0 },
-  { id: "linear", name: "Linear", url: "https://linear.app", color: "#5e6ad2", notifications: true, notificationCount: 0 },
-  { id: "chatgpt", name: "ChatGPT", url: "https://chatgpt.com", color: "#10a37f", notifications: true, notificationCount: 0 }
+  { id: "gmail",    name: "Gmail",    url: "https://mail.google.com",         color: "#d94f43" },
+  { id: "github",   name: "GitHub",   url: "https://github.com",              color: "#24292f" },
+  { id: "slack",    name: "Slack",    url: "https://slack.com/signin",        color: "#4a154b" },
+  { id: "notion",   name: "Notion",   url: "https://www.notion.so",           color: "#111111" },
+  { id: "calendar", name: "Calendar", url: "https://calendar.google.com",     color: "#3478f6" },
+  { id: "linear",   name: "Linear",   url: "https://linear.app",              color: "#5e6ad2" },
+  { id: "chatgpt",  name: "ChatGPT",  url: "https://chatgpt.com",             color: "#10a37f" }
 ];
 
 const defaultWorkspaces = [
-  { id: "work", name: "Work", icon: "W", color: "#2f80ed" },
+  { id: "work",     name: "Work",     icon: "W", color: "#2f80ed" },
   { id: "personal", name: "Personal", icon: "P", color: "#ffffff" },
-  { id: "focus", name: "Focus", icon: "F", color: "#e5484d" }
+  { id: "focus",    name: "Focus",    icon: "F", color: "#e5484d" }
 ];
 
 const defaultAppsByWorkspace = {
-  work: appCatalog.slice(0, 5),
+  work:     appCatalog.slice(0, 5),
   personal: [appCatalog[3], appCatalog[6]],
-  focus: [appCatalog[4], appCatalog[5]]
+  focus:    [appCatalog[4], appCatalog[5]]
 };
 
-const starterState = {
-  density: "normal",
-  skin: "biscuit",
-  customSkin: {
-    cream: "#f6f4ee",
-    sidebar: "#eee8de",
-    accent: "#e16f43"
-  },
-  settingsOpen: false,
-  settingsSection: "general",
-  maskUrl: false,
-  groupIconSize: 44,
-  appIconSize: 34,
-  downloadsPath: "",
-  askDownloadLocation: true,
-  globalNotifications: true,
-  notificationSound: false,
-  notificationBadges: true,
-  shortcutsEnabled: true,
-  compactShortcuts: false,
-  cameraPermission: "ask",
-  microphonePermission: "ask",
-  locationPermission: "ask",
-  fontScale: 100,
-  syncEnabled: false,
-  adBlockEnabled: false,
-  chromeExtensions: [],
-  rssFeedsByTab: {},
-  sidebarCollapsed: false,
-  secretsHidden: false,
-  showHiddenApps: false,
-  workspaces: defaultWorkspaces,
-  activeWorkspaceId: "work",
+// ── STATE ────────────────────────────────────────────────────────────────────
+
+const STARTER = {
+  density: "normal", skin: "biscuit",
+  customSkin: { cream: "#f6f4ee", sidebar: "#eee8de", accent: "#e16f43" },
+  settingsOpen: false, settingsSection: "general",
+  maskUrl: false, groupIconSize: 22, appIconSize: 17,
+  splitView: false, splitLeftAppId: "", splitRightAppId: "", splitOrientation: "horizontal",
+  downloadsPath: "", askDownloadLocation: true,
+  globalNotifications: true, notificationSound: false, notificationBadges: true,
+  shortcutsEnabled: true, compactShortcuts: false,
+  cameraPermission: "ask", microphonePermission: "ask", locationPermission: "ask",
+  fontScale: 100, uiFont: "system", syncEnabled: false, adBlockEnabled: false,
+  chromeExtensions: [], rssFeedsByTab: {},
+  sidebarCollapsed: false, secretsHidden: false, showHiddenApps: false, hideCachableApps: false,
+  workspaces: defaultWorkspaces, activeWorkspaceId: "work",
   appsByWorkspace: defaultAppsByWorkspace,
-  activeAppByWorkspace: {
-    work: "gmail",
-    personal: "notion",
-    focus: "calendar"
-  },
+  activeAppByWorkspace: { work: "gmail", personal: "notion", focus: "calendar" },
   tabsByApp: {}
 };
 
-let state = loadState();
-let activeTabId = null;
-let contextMenu = null;
-let workspaceMenu = null;
-let propertiesAppId = null;
-let propertiesWorkspaceId = null;
-let shareDraft = null;
-let pageMenu = null;
-let chromeExtensionsRestored = false;
-let rssMenu = false;
+// Ephemeral UI state (not persisted)
+let ui = { menu: null, propertiesAppId: null, propertiesWorkspaceId: null, shareDraft: null, activeTabId: null };
 
+let S = loadState();
 const root = document.getElementById("app");
-state.settingsOpen = false;
+let wvFrame = null; // persistent — never destroyed between renders
+S.settingsOpen = false;
+
+// Platform class — used by CSS to handle macOS traffic lights
+if (navigator.userAgent.includes("Mac")) document.body.classList.add("platform-mac");
 
 function loadState() {
   try {
-    const stored = JSON.parse(localStorage.getItem("cookiers.state"));
-    return migrateState(stored && stored.workspaces ? stored : starterState);
-  } catch {
-    return migrateState(starterState);
-  }
+    const raw = localStorage.getItem("crokETT.state") || localStorage.getItem("cookiers.state");
+    const stored = JSON.parse(raw);
+    return migrate(stored?.workspaces ? stored : STARTER);
+  } catch { return migrate(STARTER); }
 }
 
-function migrateState(input) {
-  const next = structuredClone(input);
-  next.density ||= "normal";
-  next.skin ||= "biscuit";
-  next.customSkin ||= starterState.customSkin;
-  next.settingsOpen = Boolean(next.settingsOpen);
-  next.settingsSection ||= "general";
-  next.maskUrl = Boolean(next.maskUrl);
-  next.groupIconSize = clampNumber(next.groupIconSize, 30, 72, 44);
-  next.appIconSize = clampNumber(next.appIconSize, 22, 58, 34);
-  next.downloadsPath ||= "";
-  next.askDownloadLocation = next.askDownloadLocation !== false;
-  next.globalNotifications = next.globalNotifications !== false;
-  next.notificationSound = Boolean(next.notificationSound);
-  next.notificationBadges = next.notificationBadges !== false;
-  next.shortcutsEnabled = next.shortcutsEnabled !== false;
-  next.compactShortcuts = Boolean(next.compactShortcuts);
-  next.cameraPermission = normalizePermission(next.cameraPermission);
-  next.microphonePermission = normalizePermission(next.microphonePermission);
-  next.locationPermission = normalizePermission(next.locationPermission);
-  next.fontScale = clampNumber(next.fontScale, 80, 130, 100);
-  next.syncEnabled = Boolean(next.syncEnabled);
-  next.adBlockEnabled = Boolean(next.adBlockEnabled);
-  next.chromeExtensions = (next.chromeExtensions || []).map((extension) => ({
-    id: "",
-    name: "Extension Chrome",
-    path: "",
-    enabled: true,
-    status: "pending",
-    error: "",
-    ...extension
-  })).filter((extension) => extension.path);
-  next.rssFeedsByTab ||= {};
-  if (!next.layoutV2Applied) {
-    next.sidebarCollapsed = false;
-    next.layoutV2Applied = true;
-  } else {
-    next.sidebarCollapsed = Boolean(next.sidebarCollapsed);
-  }
-  if (!next.layoutV3Applied) {
-    next.sidebarCollapsed = false;
-    next.layoutV3Applied = true;
-  }
-  next.secretsHidden = Boolean(next.secretsHidden);
-  next.showHiddenApps = Boolean(next.showHiddenApps);
-  next.workspaces = ensureDefaultWorkspaces(next.workspaces || starterState.workspaces).map((workspace, index) => ({
-    color: defaultWorkspaces[index]?.color || "#f8f3ea",
-    highlightColor: "",
-    iconImage: "",
-    ...workspace
+function save() { localStorage.setItem("crokETT.state", JSON.stringify(S)); }
+
+function commit() { save(); render(); }
+
+function migrate(raw) {
+  const s = structuredClone(raw);
+  s.density ||= "normal"; s.skin ||= "biscuit"; s.customSkin ||= STARTER.customSkin;
+  s.settingsOpen = false; s.settingsSection ||= "general";
+  s.maskUrl = Boolean(s.maskUrl);
+  s.groupIconSize = clamp(s.groupIconSize, 14, 72, 22);
+  s.appIconSize   = clamp(s.appIconSize,   12, 58, 17);
+  s.splitView = Boolean(s.splitView); s.splitLeftAppId ||= ""; s.splitRightAppId ||= "";
+  s.splitOrientation = ["horizontal","vertical"].includes(s.splitOrientation) ? s.splitOrientation : "horizontal";
+  s.downloadsPath ||= ""; s.askDownloadLocation = s.askDownloadLocation !== false;
+  s.globalNotifications = s.globalNotifications !== false;
+  s.notificationSound = Boolean(s.notificationSound); s.notificationBadges = s.notificationBadges !== false;
+  s.shortcutsEnabled = s.shortcutsEnabled !== false; s.compactShortcuts = Boolean(s.compactShortcuts);
+  s.cameraPermission = normPerm(s.cameraPermission); s.microphonePermission = normPerm(s.microphonePermission);
+  s.locationPermission = normPerm(s.locationPermission);
+  s.fontScale = clamp(s.fontScale, 80, 130, 100);
+  s.uiFont = ["system","sans","serif","mono"].includes(s.uiFont) ? s.uiFont : "system";
+  s.syncEnabled = Boolean(s.syncEnabled); s.adBlockEnabled = Boolean(s.adBlockEnabled);
+  s.chromeExtensions = (s.chromeExtensions || [])
+    .map(e => ({ id:"", name:"Extension Chrome", path:"", enabled:true, status:"pending", error:"", ...e }))
+    .filter(e => e.path);
+  s.rssFeedsByTab ||= {};
+  s.sidebarCollapsed = Boolean(s.sidebarCollapsed);
+  if (!s.layoutV4CompactApplied) { s.groupIconSize = 22; s.appIconSize = 17; s.layoutV4CompactApplied = true; }
+  s.secretsHidden = Boolean(s.secretsHidden); s.showHiddenApps = Boolean(s.showHiddenApps);
+  s.hideCachableApps = Boolean(s.hideCachableApps);
+
+  // Workspaces
+  const wsList = Array.isArray(s.workspaces) ? s.workspaces.filter(w => w && typeof w === "object") : [];
+  const wsById = new Map(wsList.map(w => [w.id, w]));
+  const merged = defaultWorkspaces.map((w, i) => ({
+    color: defaultWorkspaces[i]?.color || "#f8f3ea", highlightColor: "", iconImage: "",
+    priority: i + 1, shortcut: "", collapsed: false, ...w, ...(wsById.get(w.id) || {})
   }));
-  defaultWorkspaces.forEach((workspace, index) => {
-    next.workspaces[index].color = workspace.color;
+  defaultWorkspaces.forEach((w, i) => { if (merged[i]) merged[i].color = w.color; });
+  const extras = wsList.filter(w => !defaultWorkspaces.some(d => d.id === w.id));
+  s.workspaces = [...merged, ...extras];
+
+  // Apps
+  s.appsByWorkspace ||= {};
+  defaultWorkspaces.forEach(w => {
+    if (!Array.isArray(s.appsByWorkspace[w.id]) || !s.appsByWorkspace[w.id].length)
+      s.appsByWorkspace[w.id] = structuredClone(defaultAppsByWorkspace[w.id] || []);
   });
-  next.appsByWorkspace ||= {};
-  defaultWorkspaces.forEach((workspace) => {
-    if (!Array.isArray(next.appsByWorkspace[workspace.id]) || !next.appsByWorkspace[workspace.id].length) {
-      next.appsByWorkspace[workspace.id] = structuredClone(defaultAppsByWorkspace[workspace.id] || []);
-    }
-  });
-  Object.keys(next.appsByWorkspace || {}).forEach((workspaceId) => {
-    next.appsByWorkspace[workspaceId] = next.appsByWorkspace[workspaceId].map((app) => ({
-      notifications: true,
-      notificationCount: 0,
-      hidden: false,
-      iconImage: "",
-      highlightColor: "",
-      color: "#e16f43",
-      ...app
+  Object.keys(s.appsByWorkspace).forEach(wid => {
+    const apps = Array.isArray(s.appsByWorkspace[wid]) ? s.appsByWorkspace[wid] : [];
+    s.appsByWorkspace[wid] = apps.map(a => ({
+      notifications: true, notificationCount: 0, hidden: false, cachable: false,
+      priority: 0, secret: false, maskUrl: false, iconImage: "", highlightColor: "", color: "#e16f43",
+      ...a
     }));
   });
-  next.activeWorkspaceId = next.workspaces.some((workspace) => workspace.id === next.activeWorkspaceId) ? next.activeWorkspaceId : next.workspaces[0]?.id;
-  next.activeAppByWorkspace ||= {};
-  next.workspaces.forEach((workspace) => {
-    const apps = next.appsByWorkspace[workspace.id] || [];
-    if (!apps.some((app) => app.id === next.activeAppByWorkspace[workspace.id])) {
-      next.activeAppByWorkspace[workspace.id] = apps[0]?.id || null;
-    }
+
+  s.activeWorkspaceId = s.workspaces.some(w => w.id === s.activeWorkspaceId)
+    ? s.activeWorkspaceId : s.workspaces[0]?.id;
+  s.activeAppByWorkspace ||= {};
+  s.workspaces.forEach(w => {
+    const apps = s.appsByWorkspace[w.id] || [];
+    if (!apps.some(a => a.id === s.activeAppByWorkspace[w.id]))
+      s.activeAppByWorkspace[w.id] = apps[0]?.id || null;
   });
-  next.tabsByApp ||= {};
-  Object.keys(next.tabsByApp).forEach((appId) => {
-    next.tabsByApp[appId] = next.tabsByApp[appId].map((tab) => ({ secret: false, ...tab }));
+
+  s.tabsByApp ||= {};
+  Object.keys(s.tabsByApp).forEach(aid => {
+    s.tabsByApp[aid] = s.tabsByApp[aid].map(t => ({ secret: false, muted: false, pinned: false, ...t }));
   });
-  return next;
+  return s;
 }
 
-function ensureDefaultWorkspaces(workspaces) {
-  const byId = new Map((workspaces || []).map((workspace) => [workspace.id, workspace]));
-  const merged = defaultWorkspaces.map((workspace) => ({ ...workspace, ...(byId.get(workspace.id) || {}) }));
-  const extras = (workspaces || []).filter((workspace) => !defaultWorkspaces.some((item) => item.id === workspace.id));
-  return [...merged, ...extras];
-}
+// ── HELPERS ──────────────────────────────────────────────────────────────────
 
-function normalizePermission(value) {
-  return ["ask", "allow", "block"].includes(value) ? value : "ask";
+function esc(v) {
+  return String(v ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;");
 }
-
-function saveState() {
-  localStorage.setItem("cookiers.state", JSON.stringify(state));
+function clamp(v, min, max, def) { const n = Number(v); return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : def; }
+function normPerm(v) { return ["ask","allow","block"].includes(v) ? v : "ask"; }
+function normUrl(v) {
+  const t = String(v || "").trim();
+  if (!t) return "about:blank";
+  if (/^https?:\/\//i.test(t) || t.startsWith("about:")) return t;
+  if (t.includes(".") && !t.includes(" ")) return `https://${t}`;
+  return `https://www.google.com/search?q=${encodeURIComponent(t)}`;
 }
+function hostname(url) { try { return new URL(normUrl(url)).hostname; } catch { return ""; } }
+function favicon(url) { const d = hostname(url); return d ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(d)}&sz=64` : ""; }
+function initials(name) { return String(name).split(/\s+/).map(p => p[0]).join("").slice(0,2).toUpperCase(); }
 
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
+// ── QUERIES ───────────────────────────────────────────────────────────────────
 
-function clampNumber(value, min, max, fallback) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return fallback;
-  return Math.min(max, Math.max(min, number));
-}
-
-function normalizeUrl(value) {
-  const trimmed = String(value || "").trim();
-  if (!trimmed) return "about:blank";
-  if (/^https?:\/\//i.test(trimmed) || trimmed.startsWith("about:")) return trimmed;
-  if (trimmed.includes(".") && !trimmed.includes(" ")) return `https://${trimmed}`;
-  return `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
-}
-
-function hostnameFromUrl(url) {
-  try {
-    return new URL(normalizeUrl(url)).hostname;
-  } catch {
-    return "";
-  }
-}
-
-function faviconUrl(url) {
-  const domain = hostnameFromUrl(url);
-  return domain ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=64` : "";
-}
-
-function activeWorkspace() {
-  return state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId) || state.workspaces[0];
-}
-
-function activeApps() {
-  return state.appsByWorkspace[state.activeWorkspaceId] || [];
-}
-
+function activeWorkspace() { return S.workspaces.find(w => w.id === S.activeWorkspaceId) || S.workspaces[0]; }
+function activeApps()      { return S.appsByWorkspace[S.activeWorkspaceId] || []; }
 function visibleApps() {
-  const apps = activeApps();
-  return state.showHiddenApps ? apps : apps.filter((app) => !app.hidden);
+  return activeApps().filter(a => {
+    if (!S.showHiddenApps && a.hidden) return false;
+    if (S.hideCachableApps && a.cachable) return false;
+    return true;
+  });
 }
-
 function activeApp() {
   const apps = visibleApps();
-  const id = state.activeAppByWorkspace[state.activeWorkspaceId] || apps[0]?.id;
-  return apps.find((app) => app.id === id) || apps[0];
+  const id = S.activeAppByWorkspace[S.activeWorkspaceId] || apps[0]?.id;
+  return apps.find(a => a.id === id) || apps[0];
 }
-
-function findApp(appId) {
-  return activeApps().find((app) => app.id === appId);
+function findApp(id)       { return activeApps().find(a => a.id === id); }
+function findWorkspace(id) { return S.workspaces.find(w => w.id === id); }
+function findWorkspaceForApp(appId) {
+  return Object.keys(S.appsByWorkspace).find(wid => (S.appsByWorkspace[wid] || []).some(a => a.id === appId));
 }
-
-function findWorkspace(workspaceId) {
-  return state.workspaces.find((workspace) => workspace.id === workspaceId);
+function findTabById(tabId) {
+  for (const tabs of Object.values(S.tabsByApp)) {
+    const t = tabs.find(t => t.id === tabId);
+    if (t) return t;
+  }
+  return null;
 }
-
 function tabsFor(appId) {
-  if (!state.tabsByApp[appId]) {
-    const app = [...appCatalog, ...activeApps()].find((item) => item.id === appId);
-    state.tabsByApp[appId] = [
-      {
-        id: `${appId}-${Date.now()}`,
-        title: app?.name || "Nouvel onglet",
-        url: app?.url || "about:blank",
-        secret: false
-      }
-    ];
+  if (!S.tabsByApp[appId]) {
+    const app = [...appCatalog, ...activeApps()].find(a => a.id === appId);
+    S.tabsByApp[appId] = [{ id:`${appId}-${Date.now()}`, title: app?.name || "Nouvel onglet", url: app?.url || "about:blank", secret: false, muted: false, pinned: false }];
   }
-  return state.tabsByApp[appId];
+  return S.tabsByApp[appId];
 }
-
-function visibleTabsFor(appId) {
-  const tabs = tabsFor(appId);
-  return state.secretsHidden ? tabs.filter((tab) => !tab.secret) : tabs;
+function visibleTabs(appId) {
+  return S.secretsHidden ? tabsFor(appId).filter(t => !t.secret) : tabsFor(appId);
 }
-
-function ensureVisibleActiveTab(appId) {
-  const visibleTabs = visibleTabsFor(appId);
-  if (!visibleTabs.length) {
-    activeTabId = null;
-    return null;
-  }
-  const active = visibleTabs.find((tab) => tab.id === activeTabId) || visibleTabs[0];
-  activeTabId = active.id;
-  return active;
-}
-
-function getActiveTab() {
+function activeTab() {
   const app = activeApp();
   if (!app) return null;
-  return ensureVisibleActiveTab(app.id);
+  const tabs = visibleTabs(app.id);
+  if (!tabs.length) { ui.activeTabId = null; return null; }
+  const t = tabs.find(t => t.id === ui.activeTabId) || tabs[0];
+  ui.activeTabId = t.id;
+  return t;
+}
+function visibleWorkspaceApps() {
+  return S.workspaces.flatMap(w =>
+    (S.appsByWorkspace[w.id] || [])
+      .filter(a => (S.showHiddenApps || !a.hidden) && (!S.hideCachableApps || !a.cachable))
+      .map(a => ({ workspaceId: w.id, app: a }))
+  );
+}
+function splitPane(side) {
+  if (!S.splitView) return null;
+  const apps = visibleWorkspaceApps();
+  if (!apps.length) return null;
+  const savedId = side === "left" ? S.splitLeftAppId : S.splitRightAppId;
+  const saved = apps.find(i => i.app.id === savedId);
+  if (saved) return saved;
+  if (side === "left") { const cur = activeApp(); return apps.find(i => i.app.id === cur?.id) || apps[0]; }
+  const left = splitPane("left");
+  const li = apps.findIndex(i => i.app.id === left?.app.id);
+  return apps[(li + 1 + apps.length) % apps.length] || null;
+}
+function splitTabFor(app) {
+  if (!app) return null;
+  return visibleTabs(app.id)[0] || tabsFor(app.id)[0] || null;
+}
+function partition(appId, partitionKey, tab) {
+  // Chaque app a son propre container sauf si elle partage une partitionKey (cas duplication)
+  if (tab.secret) return `persist:crokETT-secret-${tab.id}`;
+  return `persist:crokETT-app-${partitionKey || appId}`;
+}
+function badge(app) {
+  if (!S.notificationBadges || !app.notifications || !app.notificationCount) return "";
+  return `<span class="notification-badge">${app.notificationCount > 99 ? "99+" : app.notificationCount}</span>`;
 }
 
-function applyChromeSettings() {
-  document.body.className = `density-${state.density} skin-${state.skin}`;
-  const skin = state.skin === "custom" ? state.customSkin : null;
-  document.body.style.setProperty("--custom-cream", skin?.cream || "");
-  document.body.style.setProperty("--custom-sidebar", skin?.sidebar || "");
-  document.body.style.setProperty("--custom-accent", skin?.accent || "");
-  document.body.style.setProperty("--group-icon-size", `${state.groupIconSize}px`);
-  document.body.style.setProperty("--app-icon-size", `${state.appIconSize}px`);
-  document.body.style.setProperty("--font-scale", `${state.fontScale / 100}`);
-}
-
-function setDensity(density) {
-  state.density = density;
-  saveState();
-  render();
-}
-
-function setSkin(skin) {
-  state.skin = skin;
-  saveState();
-  render();
-}
-
-function updateCustomSkin(formData) {
-  state.skin = "custom";
-  state.customSkin = {
-    cream: String(formData.get("cream") || state.customSkin.cream),
-    sidebar: String(formData.get("sidebar") || state.customSkin.sidebar),
-    accent: String(formData.get("accent") || state.customSkin.accent)
-  };
-  saveState();
-  render();
-}
-
-function openSettings(section = "general") {
-  state.settingsOpen = true;
-  state.settingsSection = section;
-  saveState();
-  render();
-}
-
-function closeSettings() {
-  state.settingsOpen = false;
-  saveState();
-  render();
-}
-
-function setSettingsSection(section) {
-  state.settingsSection = section;
-  saveState();
-  render();
-}
-
-function updateSetting(key, value) {
-  state[key] = value;
-  saveState();
-  syncNativeSettings();
-  render();
-}
-
-function syncNativeSettings() {
-  window.cookiers?.setPermissions?.({
-    notifications: state.globalNotifications ? "allow" : "block",
-    camera: state.cameraPermission,
-    microphone: state.microphonePermission,
-    media: state.cameraPermission === "block" || state.microphonePermission === "block" ? "block" : "ask",
-    geolocation: state.locationPermission
-  });
-  window.cookiers?.setPreferences?.({
-    askDownloadLocation: state.askDownloadLocation,
-    downloadsPath: state.downloadsPath
-  });
-}
-
-function toggleMaskUrl() {
-  state.maskUrl = !state.maskUrl;
-  saveState();
-  render();
-}
-
-function updateIconSize(kind, value) {
-  if (kind === "group") state.groupIconSize = clampNumber(value, 30, 72, 44);
-  if (kind === "app") state.appIconSize = clampNumber(value, 22, 58, 34);
-  saveState();
-  render();
-}
-
-function toggleSidebar() {
-  state.sidebarCollapsed = !state.sidebarCollapsed;
-  saveState();
-  render();
-}
+// ── MUTATIONS ─────────────────────────────────────────────────────────────────
 
 function selectWorkspace(id) {
-  state.activeWorkspaceId = id;
+  S.activeWorkspaceId = id;
   const app = activeApp();
-  activeTabId = app ? visibleTabsFor(app.id)[0]?.id || null : null;
-  closeMenus();
-  saveState();
-  render();
+  ui.activeTabId = app ? visibleTabs(app.id)[0]?.id || null : null;
+  ui.menu = null;
+  commit();
 }
-
-function selectWorkspaceByOffset(offset) {
-  const index = state.workspaces.findIndex((workspace) => workspace.id === state.activeWorkspaceId);
-  const next = (index + offset + state.workspaces.length) % state.workspaces.length;
-  selectWorkspace(state.workspaces[next].id);
+function selectApp(appId, workspaceId) {
+  if (workspaceId) S.activeWorkspaceId = workspaceId;
+  S.activeAppByWorkspace[S.activeWorkspaceId] = appId;
+  if (S.splitView) S.splitLeftAppId = appId;
+  ui.activeTabId = visibleTabs(appId)[0]?.id || null;
+  ui.menu = null;
+  commit();
 }
-
-function selectApp(id) {
-  state.activeAppByWorkspace[state.activeWorkspaceId] = id;
-  activeTabId = visibleTabsFor(id)[0]?.id || null;
-  closeMenus();
-  saveState();
-  render();
-}
-
-function selectWorkspaceApp(workspaceId, appId) {
-  state.activeWorkspaceId = workspaceId;
-  state.activeAppByWorkspace[workspaceId] = appId;
-  activeTabId = visibleTabsFor(appId)[0]?.id || null;
-  closeMenus();
-  saveState();
-  render();
-}
-
 function selectTab(id) {
-  activeTabId = id;
-  closeMenus();
-  render();
+  ui.activeTabId = id; ui.menu = null; render();
 }
-
-function closeTab(id) {
-  const app = activeApp();
+function doCloseTab(id) {
+  const app = activeApp(); if (!app) return;
   const tabs = tabsFor(app.id);
   if (tabs.length === 1) return;
-  state.tabsByApp[app.id] = tabs.filter((tab) => tab.id !== id);
-  activeTabId = visibleTabsFor(app.id)[0]?.id || null;
-  saveState();
-  render();
+  S.tabsByApp[app.id] = tabs.filter(t => t.id !== id);
+  ui.activeTabId = visibleTabs(app.id)[0]?.id || null;
+  commit();
 }
-
 function createTab(url, secret = false) {
-  const app = activeApp();
-  if (!app) return;
-  const tab = {
-    id: `${app.id}-${Date.now()}`,
-    title: secret ? "Secret" : "Nouvel onglet",
-    url: normalizeUrl(url || app.url),
-    secret
-  };
-  state.tabsByApp[app.id] = [...tabsFor(app.id), tab];
-  activeTabId = tab.id;
-  state.secretsHidden = false;
-  saveState();
-  render();
+  const app = activeApp(); if (!app) return;
+  const tab = { id:`${app.id}-${Date.now()}`, title: secret ? "Secret" : "Nouvel onglet", url: normUrl(url || app.url), secret, muted: false, pinned: false };
+  S.tabsByApp[app.id] = [...tabsFor(app.id), tab];
+  ui.activeTabId = tab.id; S.secretsHidden = false; commit();
 }
-
+function createTabInApp(appId, url) {
+  const wid = findWorkspaceForApp(appId); if (!wid) return;
+  const app = (S.appsByWorkspace[wid] || []).find(a => a.id === appId); if (!app) return;
+  const tab = { id:`${appId}-${Date.now()}`, title:"Nouvel onglet", url: normUrl(url || app.url), secret: false, muted: false, pinned: false };
+  S.tabsByApp[appId] = [...tabsFor(appId), tab];
+  S.activeWorkspaceId = wid; S.activeAppByWorkspace[wid] = appId; ui.activeTabId = tab.id; commit();
+}
+function closeOtherTabs(id) {
+  const app = activeApp(); if (!app) return;
+  const t = tabsFor(app.id).find(t => t.id === id); if (!t) return;
+  S.tabsByApp[app.id] = [t]; ui.activeTabId = id; commit();
+}
+function closeTabsToRight(id) {
+  const app = activeApp(); if (!app) return;
+  const tabs = tabsFor(app.id);
+  const idx = tabs.findIndex(t => t.id === id); if (idx < 0) return;
+  S.tabsByApp[app.id] = tabs.slice(0, idx + 1);
+  if (!S.tabsByApp[app.id].some(t => t.id === ui.activeTabId)) ui.activeTabId = id;
+  commit();
+}
+function toggleTabMuted(id) { const t = findTabById(id); if (!t) return; t.muted = !t.muted; commit(); }
+function toggleTabPinned(id) { const t = findTabById(id); if (!t) return; t.pinned = !t.pinned; commit(); }
+function renamePinnedTab(id) {
+  const t = findTabById(id); if (!t?.pinned) return;
+  const title = window.prompt("Nom de l'onglet épinglé", t.title || "");
+  if (title === null) return;
+  t.title = title.trim() || t.title; commit();
+}
 function updateActiveTabUrl(url) {
-  const app = activeApp();
-  const tab = getActiveTab();
-  if (!app || !tab) return;
-  tab.url = normalizeUrl(url);
-  tab.title = tab.url.replace(/^https?:\/\//, "").replace(/\/$/, "");
-  saveState();
-  render();
+  const app = activeApp(); const tab = activeTab(); if (!app || !tab) return;
+  tab.url = normUrl(url); tab.title = tab.url.replace(/^https?:\/\//,"").replace(/\/$/,""); commit();
 }
-
 function toggleActiveTabSecret() {
-  const tab = getActiveTab();
-  if (!tab) return;
-  tab.secret = !tab.secret;
-  if (tab.secret) state.secretsHidden = false;
-  saveState();
-  render();
+  const t = activeTab(); if (!t) return;
+  t.secret = !t.secret; if (t.secret) S.secretsHidden = false; commit();
 }
-
 function toggleSecretsHidden() {
-  state.secretsHidden = !state.secretsHidden;
+  S.secretsHidden = !S.secretsHidden;
   const app = activeApp();
-  if (app) ensureVisibleActiveTab(app.id);
-  saveState();
-  render();
+  if (app) { const tabs = visibleTabs(app.id); if (tabs.length) ui.activeTabId = tabs[0].id; }
+  commit();
 }
-
-function toggleHiddenApps() {
-  state.showHiddenApps = !state.showHiddenApps;
-  const app = activeApp();
-  if (app) state.activeAppByWorkspace[state.activeWorkspaceId] = app.id;
-  saveState();
-  render();
-}
-
-function addWorkspace() {
-  const index = state.workspaces.length + 1;
-  const id = `group-${Date.now()}`;
-  const workspace = {
-    id,
-    name: `Groupe ${index}`,
-    icon: String(index).slice(-1),
-    iconImage: "",
-    color: "#f8f3ea",
-    highlightColor: ""
-  };
-  state.workspaces = [...state.workspaces, workspace];
-  state.appsByWorkspace[id] = [];
-  state.activeAppByWorkspace[id] = null;
-  state.activeWorkspaceId = id;
-  propertiesWorkspaceId = id;
-  saveState();
-  render();
-}
-
-function addCustomApp({ name, url }) {
-  const normalized = normalizeUrl(url);
-  const id = `${String(name).toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`;
-  const app = {
-    id,
-    name: String(name).trim() || "App",
-    url: normalized,
-    color: "#e16f43",
-    highlightColor: "",
-    iconImage: "",
-    notifications: true,
-    notificationCount: 0,
-    hidden: false
-  };
-  state.appsByWorkspace[state.activeWorkspaceId] = [...activeApps(), app];
-  state.activeAppByWorkspace[state.activeWorkspaceId] = id;
-  state.tabsByApp[id] = [{ id: `${id}-home`, title: app.name, url: normalized, secret: false }];
-  activeTabId = `${id}-home`;
-  saveState();
-  render();
-}
-
-function updateAppProperties(appId, formData) {
-  const app = findApp(appId);
-  if (!app) return;
-  app.name = String(formData.get("name") || app.name).trim();
-  app.url = normalizeUrl(formData.get("url"));
-  app.color = String(formData.get("color") || app.color);
-  app.highlightColor = String(formData.get("highlightColor") || "");
-  app.iconImage = String(formData.get("iconImage") || "").trim();
-  app.notifications = formData.get("notifications") === "on";
-  app.notificationCount = Number(formData.get("notificationCount") || 0);
-  app.hidden = formData.get("hidden") === "on";
-  const homeTab = tabsFor(app.id)[0];
-  homeTab.title = app.name;
-  homeTab.url = app.url;
-  propertiesAppId = null;
-  saveState();
-  render();
-}
-
-function toggleAppHidden(appId) {
-  const app = findApp(appId);
-  if (!app) return;
-  app.hidden = !app.hidden;
-  if (app.hidden && state.activeAppByWorkspace[state.activeWorkspaceId] === appId) {
-    const next = visibleApps().find((item) => item.id !== appId);
-    if (next) state.activeAppByWorkspace[state.activeWorkspaceId] = next.id;
+function setSplitPaneApp(side, appId) {
+  const wid = findWorkspaceForApp(appId); if (!wid) return;
+  if (side === "left") {
+    S.splitLeftAppId = appId; S.activeWorkspaceId = wid;
+    S.activeAppByWorkspace[wid] = appId;
+    ui.activeTabId = visibleTabs(appId)[0]?.id || tabsFor(appId)[0]?.id || null;
   }
-  saveState();
-  render();
+  if (side === "right") S.splitRightAppId = appId;
+  commit();
 }
-
-function updateWorkspaceProperties(workspaceId, formData) {
-  const workspace = findWorkspace(workspaceId);
-  if (!workspace) return;
-  workspace.name = String(formData.get("name") || workspace.name).trim();
-  workspace.icon = String(formData.get("icon") || workspace.icon).trim().slice(0, 2).toUpperCase();
-  workspace.iconImage = String(formData.get("iconImage") || "").trim();
-  workspace.color = String(formData.get("color") || workspace.color);
-  workspace.highlightColor = String(formData.get("highlightColor") || "");
-  propertiesWorkspaceId = null;
-  saveState();
-  render();
+function toggleSplitView() {
+  S.splitView = !S.splitView;
+  if (S.splitView) {
+    const l = splitPane("left"), r = splitPane("right");
+    S.splitLeftAppId = l?.app.id || activeApp()?.id || "";
+    S.splitRightAppId = r?.app.id || "";
+  }
+  commit();
 }
-
+function splitAppToPane(appId, side) {
+  if (!findWorkspaceForApp(appId)) return;
+  if (!S.splitView) {
+    S.splitView = true;
+    S.splitLeftAppId = activeApp()?.id || appId;
+    S.splitRightAppId = appId;
+  }
+  setSplitPaneApp(side, appId);
+}
+function updateSplitPaneUrl(side, url) {
+  const pane = splitPane(side); if (!pane?.app) return;
+  const tab = splitTabFor(pane.app); if (!tab) return;
+  tab.url = normUrl(url); tab.title = tab.url.replace(/^https?:\/\//,"").replace(/\/$/,"");
+  if (side === "left") { S.activeWorkspaceId = pane.workspaceId; S.activeAppByWorkspace[pane.workspaceId] = pane.app.id; ui.activeTabId = tab.id; }
+  commit();
+}
+function addWorkspace() {
+  const id = `group-${Date.now()}`;
+  const ws = { id, name:`Groupe ${S.workspaces.length + 1}`, icon: String(S.workspaces.length + 1).slice(-1), iconImage:"", color:"#f8f3ea", highlightColor:"", priority: S.workspaces.length + 1, shortcut:"", collapsed: false };
+  S.workspaces = [...S.workspaces, ws];
+  S.appsByWorkspace[id] = []; S.activeAppByWorkspace[id] = null; S.activeWorkspaceId = id;
+  ui.propertiesWorkspaceId = id; commit();
+}
+function addCustomApp({ name, url }) {
+  const normalized = normUrl(url);
+  const id = `${String(name).toLowerCase().replace(/[^a-z0-9]+/g,"-")}-${Date.now()}`;
+  const app = { id, name: String(name).trim() || "App", url: normalized, color:"#e16f43", highlightColor:"", iconImage:"", notifications:true, notificationCount:0, hidden:false, cachable:false, priority:0, secret:false, maskUrl:false };
+  S.appsByWorkspace[S.activeWorkspaceId] = [...activeApps(), app];
+  S.activeAppByWorkspace[S.activeWorkspaceId] = id;
+  S.tabsByApp[id] = [{ id:`${id}-home`, title: app.name, url: normalized, secret: false, muted: false, pinned: false }];
+  ui.activeTabId = `${id}-home`; commit();
+}
+function updateAppProperties(appId, fd) {
+  const app = findApp(appId); if (!app) return;
+  app.name = String(fd.get("name") || app.name).trim();
+  app.url = normUrl(fd.get("url")); app.color = String(fd.get("color") || app.color);
+  app.highlightColor = String(fd.get("highlightColor") || ""); app.iconImage = String(fd.get("iconImage") || "").trim();
+  app.notifications = fd.get("notifications") === "on"; app.notificationCount = Number(fd.get("notificationCount") || 0);
+  app.priority = Number(fd.get("priority") || 0); app.cachable = fd.get("cachable") === "on";
+  app.hidden = fd.get("hidden") === "on"; app.secret = fd.get("secret") === "on"; app.maskUrl = fd.get("maskUrl") === "on";
+  const ht = tabsFor(appId)[0]; if (ht) { ht.title = app.name; ht.url = app.url; ht.secret = app.secret; }
+  ui.propertiesAppId = null; commit();
+}
+function deleteApp(appId) {
+  const apps = activeApps(); if (apps.length <= 1) return;
+  S.appsByWorkspace[S.activeWorkspaceId] = apps.filter(a => a.id !== appId);
+  delete S.tabsByApp[appId];
+  S.activeAppByWorkspace[S.activeWorkspaceId] = S.appsByWorkspace[S.activeWorkspaceId][0]?.id || null;
+  ui.activeTabId = visibleTabs(S.activeAppByWorkspace[S.activeWorkspaceId])[0]?.id || null;
+  commit();
+}
 function duplicateApp(appId) {
-  const app = findApp(appId);
-  if (!app) return;
-  const copy = { ...app, id: `${app.id}-copy-${Date.now()}`, name: `${app.name} 2` };
-  copy.hidden = false;
-  state.appsByWorkspace[state.activeWorkspaceId] = [...activeApps(), copy];
-  state.tabsByApp[copy.id] = [{ id: `${copy.id}-home`, title: copy.name, url: copy.url, secret: false }];
+  const app = findApp(appId); if (!app) return;
+  // La copie hérite la partitionKey de l'original pour partager les cookies
+  const sharedKey = app.partitionKey || appId;
+  const copy = { ...app, id:`${appId}-copy-${Date.now()}`, name:`${app.name} 2`, hidden: false, partitionKey: sharedKey };
+  S.appsByWorkspace[S.activeWorkspaceId] = [...activeApps(), copy];
+  S.tabsByApp[copy.id] = [{ id:`${copy.id}-home`, title: copy.name, url: copy.url, secret: false, muted: false, pinned: false }];
   selectApp(copy.id);
 }
-
-function deleteApp(appId) {
-  const apps = activeApps();
-  if (apps.length <= 1) return;
-  state.appsByWorkspace[state.activeWorkspaceId] = apps.filter((app) => app.id !== appId);
-  delete state.tabsByApp[appId];
-  state.activeAppByWorkspace[state.activeWorkspaceId] = state.appsByWorkspace[state.activeWorkspaceId][0].id;
-  activeTabId = visibleTabsFor(state.activeAppByWorkspace[state.activeWorkspaceId])[0]?.id || null;
-  saveState();
-  render();
+function toggleAppHidden(appId) {
+  const app = findApp(appId); if (!app) return;
+  app.hidden = !app.hidden;
+  if (app.hidden && S.activeAppByWorkspace[S.activeWorkspaceId] === appId) {
+    const next = visibleApps().find(a => a.id !== appId);
+    if (next) S.activeAppByWorkspace[S.activeWorkspaceId] = next.id;
+  }
+  commit();
 }
-
-function moveWorkspace(sourceId, targetId) {
-  if (sourceId === targetId) return;
-  const sourceIndex = state.workspaces.findIndex((workspace) => workspace.id === sourceId);
-  const targetIndex = state.workspaces.findIndex((workspace) => workspace.id === targetId);
-  if (sourceIndex < 0 || targetIndex < 0) return;
-  const [item] = state.workspaces.splice(sourceIndex, 1);
-  state.workspaces.splice(targetIndex, 0, item);
-  saveState();
-  render();
+function updateWorkspaceProperties(wid, fd) {
+  const ws = findWorkspace(wid); if (!ws) return;
+  ws.name = String(fd.get("name") || ws.name).trim();
+  ws.icon = String(fd.get("icon") || ws.icon).trim().slice(0,2).toUpperCase();
+  ws.iconImage = String(fd.get("iconImage") || "").trim();
+  ws.color = String(fd.get("color") || ws.color); ws.highlightColor = String(fd.get("highlightColor") || "");
+  ws.priority = Number(fd.get("priority") || 0); ws.shortcut = String(fd.get("shortcut") || "").trim();
+  ws.collapsed = fd.get("collapsed") === "on";
+  ui.propertiesWorkspaceId = null; commit();
 }
-
-function moveApp(sourceId, targetId) {
-  if (sourceId === targetId) return;
-  const apps = activeApps();
-  const sourceIndex = apps.findIndex((app) => app.id === sourceId);
-  const targetIndex = apps.findIndex((app) => app.id === targetId);
-  if (sourceIndex < 0 || targetIndex < 0) return;
-  const [item] = apps.splice(sourceIndex, 1);
-  apps.splice(targetIndex, 0, item);
-  state.appsByWorkspace[state.activeWorkspaceId] = apps;
-  saveState();
-  render();
+function toggleWorkspaceCollapsed(wid) {
+  const ws = findWorkspace(wid); if (!ws) return;
+  ws.collapsed = !ws.collapsed; commit();
 }
-
+function moveWorkspace(srcId, tgtId) {
+  if (srcId === tgtId) return;
+  const si = S.workspaces.findIndex(w => w.id === srcId);
+  const ti = S.workspaces.findIndex(w => w.id === tgtId);
+  if (si < 0 || ti < 0) return;
+  const [item] = S.workspaces.splice(si, 1);
+  S.workspaces.splice(ti, 0, item); commit();
+}
+function moveApp(srcId, tgtId) {
+  if (srcId === tgtId) return;
+  const sw = findWorkspaceForApp(srcId) || S.activeWorkspaceId;
+  const tw = findWorkspaceForApp(tgtId) || S.activeWorkspaceId;
+  const sa = S.appsByWorkspace[sw] || [];
+  const si = sa.findIndex(a => a.id === srcId);
+  const ta = S.appsByWorkspace[tw] || [];
+  const ti = ta.findIndex(a => a.id === tgtId);
+  if (si < 0 || ti < 0) return;
+  const [item] = sa.splice(si, 1);
+  const adj = sw === tw && si < ti ? ti - 1 : ti;
+  ta.splice(adj, 0, item);
+  S.appsByWorkspace[sw] = sa; S.appsByWorkspace[tw] = ta;
+  S.activeWorkspaceId = tw; S.activeAppByWorkspace[tw] = srcId; commit();
+}
+function moveAppToWorkspace(srcId, twid) {
+  const swid = findWorkspaceForApp(srcId);
+  if (!swid || !twid || swid === twid) return;
+  const sa = S.appsByWorkspace[swid] || [];
+  const si = sa.findIndex(a => a.id === srcId); if (si < 0) return;
+  const [item] = sa.splice(si, 1);
+  S.appsByWorkspace[twid] = [...(S.appsByWorkspace[twid] || []), item];
+  S.appsByWorkspace[swid] = sa; S.activeWorkspaceId = twid; S.activeAppByWorkspace[twid] = item.id; commit();
+}
+function incrementNotification(appId) {
+  if (!S.globalNotifications) return;
+  const app = findApp(appId); if (!app || !app.notifications) return;
+  app.notificationCount = Number(app.notificationCount || 0) + 1; commit();
+}
 function exportConfig() {
-  const payload = JSON.stringify(state, null, 2);
-  const blob = new Blob([payload], { type: "application/json" });
+  const blob = new Blob([JSON.stringify(S, null, 2)], { type:"application/json" });
   const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `cookiers-config-${new Date().toISOString().slice(0, 10)}.json`;
-  link.click();
-  URL.revokeObjectURL(url);
+  const a = document.createElement("a"); a.href = url;
+  a.download = `crokETT-config-${new Date().toISOString().slice(0,10)}.json`;
+  a.click(); URL.revokeObjectURL(url);
 }
-
-function readIconUpload(file, callback) {
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => callback(String(reader.result || ""));
-  reader.readAsDataURL(file);
-}
-
 function importConfig(file) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = () => {
-    try {
-      const imported = JSON.parse(String(reader.result || ""));
-      state = migrateState(imported);
-      activeTabId = null;
-      saveState();
-      render();
-    } catch {
-      alert("JSON config invalide.");
-    }
+    try { S = migrate(JSON.parse(String(reader.result || ""))); ui.activeTabId = null; commit(); }
+    catch { alert("JSON config invalide."); }
   };
   reader.readAsText(file);
 }
-
-function iconText(name) {
-  return String(name)
-    .split(/\s+/)
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
+function syncNative() {
+  window.crokETT?.setPermissions?.({
+    notifications: S.globalNotifications ? "allow" : "block",
+    camera: S.cameraPermission, microphone: S.microphonePermission,
+    media: S.cameraPermission === "block" || S.microphonePermission === "block" ? "block" : "ask",
+    geolocation: S.locationPermission
+  });
+  window.crokETT?.setPreferences?.({ askDownloadLocation: S.askDownloadLocation, downloadsPath: S.downloadsPath });
 }
-
-function partitionFor(workspaceId, appId, tab) {
-  return tab.secret ? `persist:cookiers-secret-${workspaceId}-${appId}-${tab.id}` : `persist:cookiers-${workspaceId}-${appId}`;
-}
-
-function densityLabel(value) {
-  return { compact: "A", normal: "B", large: "C" }[value];
-}
-
-function notificationBadge(app) {
-  if (!state.notificationBadges || !app.notifications || !app.notificationCount) return "";
-  return `<span class="notification-badge">${app.notificationCount > 99 ? "99+" : app.notificationCount}</span>`;
-}
-
-function incrementNotification(appId) {
-  if (!state.globalNotifications) return;
-  const app = findApp(appId);
-  if (!app || !app.notifications) return;
-  app.notificationCount = Number(app.notificationCount || 0) + 1;
-  saveState();
-  render();
-}
-
-function installNotificationHook(webview) {
-  const script = `
-    (() => {
-      if (window.__cookiersNotificationHooked || !window.Notification) return;
-      window.__cookiersNotificationHooked = true;
-      const NativeNotification = window.Notification;
-      const report = (payload) => {
-        try {
-          console.info("__COOKIERS_NOTIFICATION__" + JSON.stringify(payload || {}));
-        } catch {}
-      };
-      function WrappedNotification(title, options) {
-        report({ title: String(title || ""), body: String((options && options.body) || "") });
-        return new NativeNotification(title, options);
-      }
-      WrappedNotification.permission = NativeNotification.permission;
-      WrappedNotification.requestPermission = (...args) => NativeNotification.requestPermission(...args);
-      WrappedNotification.prototype = NativeNotification.prototype;
-      try {
-        Object.defineProperty(window, "Notification", { configurable: true, writable: true, value: WrappedNotification });
-      } catch {}
-    })();
-  `;
-  webview.executeJavaScript(script).catch(() => {});
-}
-
-function applyWebviewFilters(webview) {
-  if (!state.adBlockEnabled) return;
-  webview.insertCSS(`
-    [id*="ad-"], [class*=" ad-"], [class^="ad-"], [class*=" ads"],
-    iframe[src*="doubleclick"], iframe[src*="googlesyndication"],
-    [aria-label*="advertisement" i], [aria-label*="publicité" i] {
-      display: none !important;
-    }
-  `).catch(() => {});
-}
-
-async function detectRssFeeds(webview) {
-  const tabId = webview.dataset.tabId;
-  if (!tabId) return;
-  let feeds = [];
+async function openShare() {
+  const tab = activeTab(); if (!tab) return;
+  ui.shareDraft = { text:"", title: tab.title, url: tab.url };
+  ui.menu = null; render();
+  const wv = document.querySelector("webview.active");
+  if (!wv) return;
   try {
-    feeds = await webview.executeJavaScript(`
-      Array.from(document.querySelectorAll('link[rel~="alternate"]'))
-        .filter((link) => /rss|atom|xml/i.test(link.type || link.href || ""))
-        .map((link) => ({
-          title: link.title || document.title || "RSS",
-          url: new URL(link.href, location.href).href,
-          type: link.type || "feed"
-        }))
-    `);
-  } catch {
-    feeds = [];
-  }
-  state.rssFeedsByTab[tabId] = Array.isArray(feeds) ? feeds : [];
-  saveState();
-  refreshRssControls();
+    const sel = await Promise.race([
+      wv.executeJavaScript("String(window.getSelection?.()?.toString() || '')"),
+      new Promise(r => setTimeout(() => r(""), 450))
+    ]);
+    if (ui.shareDraft?.url === tab.url) { ui.shareDraft.text = String(sel || "").trim(); render(); }
+  } catch { render(); }
 }
-
-function rssFeedsForActiveTab() {
-  const tab = getActiveTab();
-  return tab ? state.rssFeedsByTab[tab.id] || [] : [];
+function shareText() {
+  if (!ui.shareDraft) return "";
+  return `${ui.shareDraft.text ? ui.shareDraft.text + "\n\n" : ui.shareDraft.title + "\n"}${ui.shareDraft.url}`;
 }
-
-function refreshRssControls() {
-  const feeds = rssFeedsForActiveTab();
-  const button = document.querySelector("[data-rss-menu]");
-  if (button) button.classList.toggle("armed", feeds.length > 0);
-  if (rssMenu) mountRssMenu();
+function shareTo(target) {
+  if (!ui.shareDraft) return;
+  const text = shareText();
+  if (target === "copy") { window.crokETT.copyText(text); ui.shareDraft = null; render(); return; }
+  if (target === "x") window.crokETT.openExternal(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`);
+  if (target === "linkedin") window.crokETT.openExternal(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(ui.shareDraft.url)}`);
+  if (target === "mail") window.crokETT.openExternal(`mailto:?subject=${encodeURIComponent(ui.shareDraft.title)}&body=${encodeURIComponent(text)}`);
+  if (target === "buffer") window.crokETT.openExternal(`https://buffer.com/add?text=${encodeURIComponent(text)}&url=${encodeURIComponent(ui.shareDraft.url)}`);
 }
-
+function applyAdBlock(wv) {
+  if (!S.adBlockEnabled) return;
+  wv.insertCSS(`[id*="ad-"],[class*=" ad-"],[class^="ad-"],[class*=" ads"],iframe[src*="doubleclick"],iframe[src*="googlesyndication"],[aria-label*="advertisement" i],[aria-label*="publicité" i]{display:none!important}`).catch(()=>{});
+}
+function injectWebviewFont(wv) {
+  if (!S.uiFont || S.uiFont === "system") return;
+  const map = { sans: "'Helvetica Neue',Arial,sans-serif", serif: "Georgia,'Times New Roman',serif", mono: "'Courier New',Courier,monospace" };
+  const fam = map[S.uiFont]; if (!fam) return;
+  wv.insertCSS(`body,p,div,span,a,h1,h2,h3,h4,h5,h6,button,input,textarea,select{font-family:${fam}!important}`).catch(()=>{});
+}
+function hookNotifications(wv) {
+  wv.executeJavaScript(`(()=>{if(window.__crokETTHooked||!window.Notification)return;window.__crokETTHooked=true;const N=window.Notification;const r=p=>{try{console.info("__CROKETTS_NOTIFICATION__"+JSON.stringify(p||{}))}catch{}};function W(t,o){r({title:String(t||""),body:String((o&&o.body)||"")});return new N(t,o)}W.permission=N.permission;W.requestPermission=(...a)=>N.requestPermission(...a);W.prototype=N.prototype;try{Object.defineProperty(window,"Notification",{configurable:true,writable:true,value:W})}catch{}})()`).catch(()=>{});
+}
 async function loadChromeExtension() {
   try {
-    const extension = await window.cookiers.chooseChromeExtension();
-    if (!extension) return;
-    state.chromeExtensions = [
-      ...state.chromeExtensions.filter((item) => item.id !== extension.id),
-      extension
-    ];
-    saveState();
-    render();
-  } catch (error) {
-    alert(`Extension Chrome non chargée: ${error?.message || error}`);
-  }
+    const ext = await window.crokETT.chooseChromeExtension(); if (!ext) return;
+    S.chromeExtensions = [...S.chromeExtensions.filter(e => e.id !== ext.id), ext]; commit();
+  } catch(e) { alert(`Extension non chargée: ${e?.message || e}`); }
 }
-
-async function restoreChromeExtensions() {
-  if (chromeExtensionsRestored) return;
-  chromeExtensionsRestored = true;
-  let changed = false;
-  for (const extension of state.chromeExtensions.filter((item) => item.enabled)) {
-    try {
-      const loaded = await window.cookiers.loadChromeExtension(extension.path);
-      Object.assign(extension, loaded);
-    } catch (error) {
-      extension.status = "error";
-      extension.error = error?.message || String(error);
-    }
-    changed = true;
-  }
-  if (changed) {
-    saveState();
-    render();
-  }
-}
-
-async function setChromeExtensionEnabled(extensionId, enabled) {
-  const extension = state.chromeExtensions.find((item) => item.id === extensionId);
-  if (!extension) return;
-  extension.enabled = enabled;
+async function setChromeExtEnabled(id, enabled) {
+  const ext = S.chromeExtensions.find(e => e.id === id); if (!ext) return;
+  ext.enabled = enabled;
   try {
-    if (enabled) {
-      const loaded = await window.cookiers.loadChromeExtension(extension.path);
-      Object.assign(extension, loaded);
-    } else {
-      await window.cookiers.unloadChromeExtension(extension.id);
-      extension.status = "disabled";
-      extension.error = "";
-    }
-  } catch (error) {
-    extension.status = "error";
-    extension.error = error?.message || String(error);
-  }
-  saveState();
-  render();
+    if (enabled) { const loaded = await window.crokETT.loadChromeExtension(ext.path); Object.assign(ext, loaded); }
+    else { await window.crokETT.unloadChromeExtension(id); ext.status = "disabled"; ext.error = ""; }
+  } catch(e) { ext.status = "error"; ext.error = e?.message || String(e); }
+  commit();
+}
+async function removeChromeExtension(id) {
+  const ext = S.chromeExtensions.find(e => e.id === id);
+  if (ext?.id) await window.crokETT.unloadChromeExtension(ext.id).catch(()=>{});
+  S.chromeExtensions = S.chromeExtensions.filter(e => e.id !== id); commit();
 }
 
-async function removeChromeExtension(extensionId) {
-  const extension = state.chromeExtensions.find((item) => item.id === extensionId);
-  if (extension?.id) await window.cookiers.unloadChromeExtension(extension.id).catch(() => {});
-  state.chromeExtensions = state.chromeExtensions.filter((item) => item.id !== extensionId);
-  saveState();
-  render();
-}
+// ── RENDER ────────────────────────────────────────────────────────────────────
 
-function parseNotificationCount(title) {
-  const match = String(title || "").match(/^\((\d+)\)/);
-  return match ? Number(match[1]) : 0;
-}
-
-async function openShareModal() {
-  const tab = getActiveTab();
-  const webview = document.querySelector("webview.active");
-  if (!tab) return;
-  shareDraft = {
-    text: "",
-    title: tab.title,
-    url: tab.url
-  };
-  closeMenus();
-  removeFloatingMenus();
-  mountShareModal();
-  if (!webview) return;
-  try {
-    const selectedText = await Promise.race([
-      webview.executeJavaScript("String(window.getSelection && window.getSelection().toString() || '')"),
-      new Promise((resolve) => setTimeout(() => resolve(""), 450))
-    ]);
-    if (!shareDraft || shareDraft.url !== tab.url) return;
-    shareDraft.text = String(selectedText || "").trim();
-    updateSharePreview();
-  } catch {
-    updateSharePreview();
-  }
-}
-
-function shareText() {
-  if (!shareDraft) return "";
-  const intro = shareDraft.text ? `${shareDraft.text}\n\n` : `${shareDraft.title}\n`;
-  return `${intro}${shareDraft.url}`;
-}
-
-function shareTo(target) {
-  if (!shareDraft) return;
-  const text = shareText();
-  const encodedText = encodeURIComponent(text);
-  const encodedUrl = encodeURIComponent(shareDraft.url);
-  if (target === "copy") window.cookiers.copyText(text);
-  if (target === "x") window.cookiers.openExternal(`https://twitter.com/intent/tweet?text=${encodedText}`);
-  if (target === "linkedin") window.cookiers.openExternal(`https://www.linkedin.com/sharing/share-offsite/?url=${encodedUrl}`);
-  if (target === "mail") window.cookiers.openExternal(`mailto:?subject=${encodeURIComponent(shareDraft.title)}&body=${encodedText}`);
-  if (target === "buffer") window.cookiers.openExternal(`https://buffer.com/add?text=${encodedText}&url=${encodedUrl}`);
-  if (target === "copy") {
-    shareDraft = null;
-    document.getElementById("share-modal")?.remove();
-  }
-}
-
-function closeMenus() {
-  contextMenu = null;
-  workspaceMenu = null;
-  pageMenu = null;
-  rssMenu = false;
-}
-
-function removeFloatingMenus() {
-  document.querySelectorAll(".page-menu, .rss-menu").forEach((menu) => menu.remove());
-}
-
-function mountPageMenu() {
-  removeFloatingMenus();
-  if (!pageMenu) return;
-  root.insertAdjacentHTML("beforeend", renderPageMenu());
-  wirePageMenu();
-  installFloatingMenuCloser();
-}
-
-function mountRssMenu() {
-  removeFloatingMenus();
-  if (!rssMenu) return;
-  root.insertAdjacentHTML("beforeend", renderRssMenu());
-  document.querySelectorAll("[data-rss-open]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const feed = rssFeedsForActiveTab()[Number(button.dataset.rssOpen)];
-      if (feed?.url) window.cookiers.openExternal(feed.url);
-      closeMenus();
-      removeFloatingMenus();
-    });
-  });
-  installFloatingMenuCloser();
-}
-
-function mountShareModal() {
-  document.getElementById("share-modal")?.remove();
-  if (!shareDraft) return;
-  root.insertAdjacentHTML("beforeend", renderShareModal());
-  wireShareModal();
-}
-
-function updateSharePreview() {
-  const preview = document.querySelector("#share-modal .share-preview");
-  if (preview) preview.textContent = shareText();
-}
-
-function installFloatingMenuCloser() {
-  setTimeout(() => {
-    document.addEventListener("click", (event) => {
-      if (!event.target.closest(".context-menu")) {
-        closeMenus();
-        removeFloatingMenus();
-      }
-    }, { once: true });
-  }, 0);
+function applyChrome() {
+  document.body.className = `density-${S.density} skin-${S.skin}`;
+  const skin = S.skin === "custom" ? S.customSkin : null;
+  document.body.style.setProperty("--custom-cream",   skin?.cream   || "");
+  document.body.style.setProperty("--custom-sidebar", skin?.sidebar || "");
+  document.body.style.setProperty("--custom-accent",  skin?.accent  || "");
+  document.body.style.setProperty("--group-icon-size",`${S.groupIconSize}px`);
+  document.body.style.setProperty("--app-icon-size",  `${S.appIconSize}px`);
+  document.body.style.setProperty("--font-scale",     `${S.fontScale / 100}`);
+  const _fontMap = { system: "-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif", sans: "'Helvetica Neue',Arial,sans-serif", serif: "Georgia,'Times New Roman',serif", mono: "'Courier New',Courier,monospace" };
+  document.body.style.setProperty("--ui-font", _fontMap[S.uiFont] || _fontMap.system);
 }
 
 function render() {
-  applyChromeSettings();
-  const workspace = activeWorkspace();
-  const apps = visibleApps();
-  const app = activeApp();
-  const tabs = app ? tabsFor(app.id) : [];
-  const visibleTabs = app ? visibleTabsFor(app.id) : [];
-  const tab = getActiveTab();
-  const rssFeeds = rssFeedsForActiveTab();
-  const shellClasses = ["shell", state.sidebarCollapsed ? "sidebar-icons" : "", state.secretsHidden ? "secrets-hidden" : "", state.maskUrl ? "url-masked" : ""].filter(Boolean).join(" ");
+  applyChrome();
+  const ws    = activeWorkspace();
+  const app   = activeApp();
+  const tab   = activeTab();
+  const vtabs = app ? visibleTabs(app.id) : [];
+  const lPane = splitPane("left"),  rPane = splitPane("right");
+  const lApp  = lPane?.app || app;
+  const lTab  = splitTabFor(lApp) || tab, rTab = splitTabFor(rPane?.app);
+  const maskUrl = S.maskUrl || Boolean(app?.maskUrl);
+  const splitReady = Boolean(S.splitView && lPane && rPane && lTab && rTab);
+  const shellCls = ["shell", S.sidebarCollapsed?"sidebar-icons":"", S.secretsHidden?"secrets-hidden":"", S.maskUrl?"url-masked":"", splitReady?"split-view":"", splitReady&&S.splitOrientation==="vertical"?"split-bottom":""].filter(Boolean).join(" ");
+  const menu = ui.menu;
 
-  root.innerHTML = `
-    <main class="${shellClasses}">
-      <aside class="app-sidebar unified-sidebar">
-        <section class="sidebar-section">
-          ${state.workspaces
-            .map((group, groupIndex) => {
-              const groupApps = (state.appsByWorkspace[group.id] || []).filter((item) => state.showHiddenApps || !item.hidden);
-              return `
-                <div class="unified-group">
-                  <button class="unified-group-title ${group.id === workspace.id ? "active" : ""}" draggable="true" data-workspace="${group.id}" title="${escapeHtml(group.name)} - Cmd/Ctrl+${groupIndex + 1}">
-                    ${escapeHtml(group.name)}${groupApps.length ? `(${groupApps.length})` : ""}
-                  </button>
-                  <div class="app-list">
-                    ${groupApps
-                      .map((item) => {
-                        const icon = item.iconImage || faviconUrl(item.url);
-                        const active = group.id === workspace.id && app?.id === item.id;
-                        return `
-                          <button class="app-button cookie-app ${active ? "active" : ""} ${item.hidden ? "hidden-app" : ""}" draggable="true" data-workspace-app="${group.id}:${item.id}" data-app="${item.id}" title="${escapeHtml(item.name)}" style="--highlight:${escapeHtml(item.highlightColor || "transparent")}">
-                            <span class="app-icon-wrap">
-                              <span class="app-icon" style="background:${escapeHtml(item.color)}">
-                                ${icon ? `<img src="${escapeHtml(icon)}" alt="" />` : escapeHtml(iconText(item.name))}
-                              </span>
-                              ${notificationBadge(item)}
-                            </span>
-                            <span class="app-copy">
-                              <span class="app-name">${escapeHtml(item.name)}</span>
-                            </span>
-                          </button>
-                        `;
-                      })
-                      .join("")}
-                  </div>
-                </div>
-              `;
-            })
-            .join("")}
-        </section>
-        <div class="cookie-footer">
-          <button data-add-workspace>+ Groupe</button>
-          <button data-open-settings="general">⚙ Réglages</button>
-          <button class="cookie-add-app" data-open-modal>+ App</button>
-        </div>
-      </aside>
-
+  // First render: build the persistent skeleton. wvFrame is created once and never destroyed.
+  if (!wvFrame) {
+    root.innerHTML = `<main></main><div id="overlays"></div>`;
+    root.querySelector("main").innerHTML = `
+      <aside class="app-sidebar unified-sidebar"></aside>
       <section class="browser">
-        <div class="toolbar">
-          <div class="nav-controls">
-            <button class="icon-button" data-nav="back" title="Retour">←</button>
-            <button class="icon-button" data-nav="forward" title="Avant">→</button>
-            <button class="icon-button" data-nav="reload" title="Recharger">↻</button>
-          </div>
-          <form class="address-form">
-            <span>URL</span>
-            <input name="url" value="${escapeHtml(state.maskUrl ? hostnameFromUrl(tab?.url || "") : tab?.url || "")}" autocomplete="off" spellcheck="false" ${state.maskUrl ? "readonly" : ""} />
-          </form>
-          <div class="right-controls">
-            <button class="icon-button" data-new-tab title="Nouvel onglet">+</button>
-            <button class="icon-button" data-share title="Partager sélection + URL">⇪</button>
-            <button class="icon-button ${rssFeeds.length ? "armed" : ""}" data-rss-menu title="RSS détecté">${rssFeeds.length ? "RSS" : "RSS"}</button>
-            <button class="icon-button" data-page-menu title="Menu contextuel">☰</button>
-            <button class="icon-button" data-open-settings="general" title="Paramètres">⚙</button>
-            <button class="icon-button" data-external title="Ouvrir dans le navigateur">↗</button>
-          </div>
-        </div>
+        <div class="toolbar"></div>
+        <div class="tabbar"></div>
+        <div class="web-stage"><div class="web-frame"></div></div>
+      </section>`;
+    wvFrame = root.querySelector(".web-frame");
+  }
 
-        <div class="tabbar">
-          ${visibleTabs
-            .map(
-              (item) => `
-                <button class="tab ${item.id === activeTabId ? "active" : ""} ${item.secret ? "secret" : ""}" data-tab="${item.id}">
-                  <span class="tab-title">${item.secret ? "● " : ""}${escapeHtml(item.title)}</span>
-                  <span class="tab-close" data-close-tab="${item.id}">×</span>
-                </button>
-              `
-            )
-            .join("")}
-        </div>
+  // Update shell class
+  root.querySelector("main").className = shellCls;
 
-        <div class="web-stage">
-          <div class="web-frame">
-            ${
-              tab && app && visibleTabs.length
-                ? tabs
-                    .filter((item) => !state.secretsHidden || !item.secret)
-                    .map(
-                      (item) => `
-                        <webview
-                          class="${item.id === activeTabId ? "active" : ""}"
-                          src="${escapeHtml(item.url)}"
-                          partition="${partitionFor(workspace.id, app.id, item)}"
-                          data-tab-id="${item.id}"
-                          data-app-id="${app.id}"
-                          allowpopups
-                        ></webview>
-                      `
-                    )
-                    .join("")
-                : `<div class="empty-state"><div class="empty-box"><h1>${state.secretsHidden ? "Onglets secrets cachés" : "Ajoute une app"}</h1><p>${state.secretsHidden ? "Cmd/Ctrl+Shift+H les réaffiche." : "CookieRS organise les apps web par workspace, avec sessions séparées."}</p><button class="primary" data-open-modal>Ajouter</button></div></div>`
-            }
-          </div>
-        </div>
-      </section>
-    </main>
+  // Update sidebar
+  root.querySelector(".app-sidebar").innerHTML = `
+    <section class="sidebar-section">
+      ${S.workspaces.map((g, gi) => {
+        const gApps = (S.appsByWorkspace[g.id] || []).filter(a => (S.showHiddenApps || !a.hidden) && (!S.hideCachableApps || !a.cachable));
+        const col = Boolean(g.collapsed);
+        return `
+          <div class="unified-group${col?" collapsed":""}" data-ws-drop="${esc(g.id)}">
+            <div class="unified-group-row${g.id === ws.id?" active":""}">
+              <button class="outliner-toggle" data-toggle-ws="${esc(g.id)}" title="${col?"Déplier":"Replier"}">${col?"▸":"▾"}</button>
+              <button class="unified-group-title" draggable="true" data-ws="${esc(g.id)}" title="${esc(g.name)} - Cmd/Ctrl+${gi+1}" style="--highlight:${esc(g.highlightColor||"transparent")}">
+                ${g.iconImage?`<img src="${esc(g.iconImage)}" alt="" />`:`<span class="group-glyph">${esc(g.icon||"")}</span>`}
+                <span>${esc(g.name)}${gApps.length?` (${gApps.length})`:""}</span>
+              </button>
+            </div>
+            <div class="app-list"${col?" hidden":""}>
+              ${gApps.map(a => {
+                const icon = a.iconImage || favicon(a.url);
+                const active = g.id === ws.id && app?.id === a.id;
+                const isClone = Boolean(a.partitionKey && a.partitionKey !== a.id);
+                return `
+                  <button class="app-button cookie-app${active?" active":""}${a.hidden?" hidden-app":""}${a.cachable?" cachable-app":""}${isClone?" clone-app":""}" draggable="true" data-ws-app="${esc(g.id)}:${esc(a.id)}" title="${esc(a.name)}${isClone?` · Clone · Réf: ${esc(a.id)}`:` · Réf: ${esc(a.id)}`}" style="--highlight:${esc(a.highlightColor||"transparent")}">
+                    <span class="app-icon-wrap">
+                      <span class="app-icon" style="background:${esc(a.color)}">${icon?`<img src="${esc(icon)}" alt="" />`:`${esc(initials(a.name))}`}</span>
+                      ${badge(a)}
+                      ${isClone?`<span class="clone-badge" title="Clone de ${esc(a.partitionKey||a.id)}">⊕</span>`:""}
+                    </span>
+                    <span class="app-copy"><span class="app-name">${esc(a.name)}</span></span>
+                  </button>`;
+              }).join("")}
+            </div>
+          </div>`;
+      }).join("")}
+    </section>
+    <div class="cookie-footer">
+      <button data-add-ws>+ Groupe</button>
+      <button class="cookie-add-app" data-open-add>+ App</button>
+      <button data-toggle-cachable>${S.hideCachableApps?"Afficher":"Masquer"}</button>
+      <button data-open-settings="general">⚙ Réglages</button>
+    </div>`;
 
+  // Update toolbar
+  root.querySelector(".toolbar").innerHTML = `
+    <div class="nav-controls">
+      <button class="icon-button" data-nav="back" title="Retour">←</button>
+      <button class="icon-button" data-nav="forward" title="Avant">→</button>
+      <button class="icon-button" data-nav="reload" title="Recharger">↻</button>
+    </div>
+    <form class="address-form" data-url-form>
+      <span>URL</span>
+      <input name="url" value="${esc(maskUrl ? hostname(tab?.url||"") : tab?.url||"")}" autocomplete="off" spellcheck="false" ${maskUrl?"readonly":""} />
+    </form>
+    <div class="right-controls">
+      <button class="icon-button" data-new-tab title="Nouvel onglet">+</button>
+      <button class="icon-button" data-share title="Partager">⇪</button>
+      <button class="icon-button${splitReady?" armed":""}" data-split-toggle title="Double vue">Ⅱ</button>
+      <button class="icon-button page-menu-button" data-page-menu-btn title="Menu page">☰</button>
+      <button class="icon-button" data-open-settings="general" title="Paramètres">⚙</button>
+      <button class="icon-button" data-external title="Ouvrir navigateur">↗</button>
+    </div>`;
+
+  // Update tabbar
+  root.querySelector(".tabbar").innerHTML = vtabs.map(t => `
+    <button class="tab${t.id===ui.activeTabId?" active":""}${t.secret?" secret":""}${t.pinned?" pinned":""}${t.muted?" muted":""}" data-tab="${esc(t.id)}">
+      <span class="tab-title">${t.pinned?"P ":""}${t.muted?"M ":""}${t.secret?"S ":""}${esc(t.title)}</span>
+      <span class="tab-menu-trigger" data-tab-menu="${esc(t.id)}">⌄</span>
+      <span class="tab-close" data-close-tab="${esc(t.id)}">×</span>
+    </button>`).join("");
+
+  // Update overlays (modals + context menus) — webviews are never inside here
+  document.getElementById("overlays").innerHTML = `
     ${renderAddModal()}
-    ${renderPropertiesModal(app)}
+    ${renderPropertiesModal()}
     ${renderWorkspaceModal()}
     ${renderShareModal()}
-    ${renderSettingsModal()}
-    ${renderContextMenu()}
-    ${renderWorkspaceMenu()}
-    ${renderPageMenu()}
-    ${renderRssMenu()}
+    ${renderSettings()}
+    ${renderContextMenu(menu)}
+    ${renderTabMenu(menu)}
+    ${renderWorkspaceMenu(menu)}
+    ${renderPageMenu(menu)}
   `;
 
-  wireEvents();
+  // Update webviews without ever detaching them from the DOM
+  syncWebviews(wvFrame, ws, app, splitReady, lPane, lTab, rPane, rTab);
+  wireWebviews();
 }
+
+function syncWebviews(frame, ws, app, splitReady, lPane, lTab, rPane, rTab) {
+  if (!frame) return;
+  frame.className = `web-frame${splitReady ? " split-frame" : ""}`;
+
+  if (splitReady) {
+    const lTabId = lTab?.id || "", rTabId = rTab?.id || "";
+
+    for (const side of ["left", "right"]) {
+      const pane = side === "left" ? lPane : rPane;
+      const pTab = side === "left" ? lTab  : rTab;
+
+      // Find or create section
+      let section = frame.querySelector(`[data-split-pane="${side}"]`);
+      if (!section) {
+        section = document.createElement("section");
+        section.className = "split-pane";
+        section.dataset.splitPane = side;
+        frame.appendChild(section);
+      }
+
+      // Update toolbar IN PLACE — never destroy it (destroying causes layout jump → flash)
+      let toolbar = section.querySelector(".split-pane-toolbar");
+      if (!toolbar) {
+        toolbar = document.createElement("div");
+        toolbar.className = "split-pane-toolbar";
+        section.insertBefore(toolbar, section.firstChild);
+      }
+      const apps = visibleWorkspaceApps();
+      const selId = pane?.app?.id || "";
+      // Rebuild select only if app list changed
+      const select = toolbar.querySelector("select");
+      if (!select || select.dataset.splitSelect !== side || select.value !== selId) {
+        const newSel = document.createElement("select");
+        newSel.dataset.splitSelect = side;
+        newSel.innerHTML = apps.map(i => `<option value="${esc(i.app.id)}"${i.app.id===selId?" selected":""}>${esc(i.app.name)}</option>`).join("");
+        if (select) select.replaceWith(newSel);
+        else toolbar.insertBefore(newSel, toolbar.firstChild);
+      }
+      // Update URL input value without recreating the element
+      let urlForm = toolbar.querySelector("form");
+      if (!urlForm) {
+        urlForm = document.createElement("form");
+        urlForm.dataset.splitUrl = side;
+        const inp = document.createElement("input");
+        inp.name = "url"; inp.autocomplete = "off"; inp.spellcheck = false;
+        urlForm.appendChild(inp);
+        toolbar.appendChild(urlForm);
+      }
+      const urlInput = urlForm.querySelector("input");
+      if (urlInput && document.activeElement !== urlInput) urlInput.value = pTab?.url || "";
+
+      // Webview: always find by tab ID — never by "any webview in section"
+      if (pane?.app && pTab) {
+        section.querySelector(".empty-state")?.remove();
+        let wv = frame.querySelector(`webview[data-tab-id="${pTab.id}"]`);
+        if (!wv) {
+          wv = document.createElement("webview");
+          wv.setAttribute("src", pTab.url);
+          wv.setAttribute("partition", partition(pane.app.id, pane.app.partitionKey, pTab));
+          wv.setAttribute("data-tab-id", pTab.id);
+          wv.setAttribute("data-app-id", pane.app.id);
+          wv.setAttribute("allowpopups", "");
+        }
+        wv.className = `active pane-${side}`;
+        wv.dataset.muted = pTab.muted ? "true" : "false";
+        if (wv.parentElement !== section) section.appendChild(wv);
+        // Evict stale webviews that don't belong to this pane
+        section.querySelectorAll("webview").forEach(w => { if (w !== wv) frame.appendChild(w); });
+      } else {
+        section.querySelectorAll("webview").forEach(wv => frame.appendChild(wv));
+        if (!section.querySelector(".empty-state")) {
+          const es = document.createElement("div");
+          es.className = "empty-state";
+          es.textContent = "Dépose une app ici";
+          section.appendChild(es);
+        }
+      }
+    }
+    // Drop orphaned webviews not belonging to either pane
+    frame.querySelectorAll(":scope > webview").forEach(wv => {
+      if (wv.dataset.tabId !== lTabId && wv.dataset.tabId !== rTabId) wv.remove();
+    });
+  } else {
+    // Move webviews from split sections back into frame before removing sections
+    frame.querySelectorAll(".split-pane").forEach(s => {
+      s.querySelectorAll("webview").forEach(wv => frame.appendChild(wv));
+      s.remove();
+    });
+    frame.querySelector(".empty-state")?.remove();
+
+    if (app) {
+      const allTabs = tabsFor(app.id).filter(t => !S.secretsHidden || !t.secret);
+      const neededIds = new Set(allTabs.map(t => t.id));
+      frame.querySelectorAll("webview").forEach(wv => { if (!neededIds.has(wv.dataset.tabId)) wv.remove(); });
+      if (allTabs.length) {
+        allTabs.forEach(t => {
+          let wv = frame.querySelector(`webview[data-tab-id="${t.id}"]`);
+          if (!wv) {
+            wv = document.createElement("webview");
+            wv.setAttribute("src", t.url);
+            wv.setAttribute("partition", partition(app.id, app.partitionKey, t));
+            wv.setAttribute("data-tab-id", t.id);
+            wv.setAttribute("data-app-id", app.id);
+            wv.setAttribute("allowpopups", "");
+            frame.appendChild(wv);
+          }
+          wv.className = t.id === ui.activeTabId ? "active pane-left" : "";
+          wv.dataset.muted = t.muted ? "true" : "false";
+        });
+      } else {
+        const box = document.createElement("div");
+        box.className = "empty-state";
+        box.innerHTML = `<div class="empty-box"><h1>${S.secretsHidden?"Onglets secrets cachés":"Ajoute une app"}</h1><p>${S.secretsHidden?"Cmd/Ctrl+Shift+H les réaffiche.":"CrokETT organise les apps web par workspace."}</p></div>`;
+        frame.appendChild(box);
+      }
+    } else {
+      frame.querySelectorAll("webview").forEach(wv => wv.remove());
+      const box = document.createElement("div");
+      box.className = "empty-state";
+      box.innerHTML = `<div class="empty-box"><h1>${S.secretsHidden?"Onglets secrets cachés":"Ajoute une app"}</h1><p>${S.secretsHidden?"Cmd/Ctrl+Shift+H les réaffiche.":"CrokETT organise les apps web par workspace."}</p><button class="primary" data-open-add>Ajouter</button></div>`;
+      frame.appendChild(box);
+    }
+  }
+}
+
+function renderSplitPane(side, pane, tab) {
+  const apps = visibleWorkspaceApps();
+  const selId = pane?.app?.id || "";
+  return `
+    <section class="split-pane" data-split-pane="${side}">
+      <div class="split-pane-toolbar">
+        <select data-split-select="${side}">
+          ${apps.map(i => `<option value="${esc(i.app.id)}"${i.app.id===selId?" selected":""}>${esc(i.app.name)}</option>`).join("")}
+        </select>
+        <form data-split-url="${side}">
+          <input name="url" value="${esc(tab?.url||"")}" autocomplete="off" spellcheck="false" />
+        </form>
+      </div>
+      ${pane?.app && tab
+        ? `<webview class="active pane-${side}" src="${esc(tab.url)}" partition="${esc(partition(pane.app.id,pane.app.partitionKey,tab))}" data-tab-id="${esc(tab.id)}" data-app-id="${esc(pane.app.id)}" data-muted="${tab.muted?"true":"false"}" allowpopups></webview>`
+        : `<div class="empty-state">Dépose une app ici</div>`}
+    </section>`;
+}
+
+function renderContextMenu(menu) {
+  if (menu?.kind !== "app") return "";
+  const app = findApp(menu.appId); if (!app) return "";
+  return `<div class="context-menu" style="left:${menu.x}px;top:${menu.y}px">
+    <button data-ctx="open">Ouvrir</button>
+    <button data-ctx="new-tab">Nouvel onglet</button>
+    <button data-ctx="secret-tab">Onglet secret</button>
+    <button data-ctx="split-left">Split gauche</button>
+    <button data-ctx="split-right">Split droite</button>
+    <button data-ctx="properties">Propriétés</button>
+    <button data-ctx="duplicate">Dupliquer</button>
+    <button data-ctx="notifications">${app.notifications?"Couper notifications":"Activer notifications"}</button>
+    <button data-ctx="hidden">${app.hidden?"Afficher":"Cacher"}</button>
+    <button data-ctx="clear-count">Reset compteur</button>
+    <button data-ctx="delete" class="danger-text">Supprimer</button>
+  </div>`;
+}
+
+function renderTabMenu(menu) {
+  if (menu?.kind !== "tab") return "";
+  const tab = findTabById(menu.tabId); if (!tab) return "";
+  const app = activeApp(), ws = activeWorkspace();
+  const otherGroups = S.workspaces.map(g => ({ g, apps:(S.appsByWorkspace[g.id]||[]).filter(a=>a.id!==app?.id) })).filter(g=>g.apps.length);
+  return `<div class="context-menu tab-menu" style="left:${menu.x}px;top:${menu.y}px">
+    <button data-tab-act="new-tab">Nouvel onglet</button>
+    <hr/>
+    <button data-tab-act="close">Fermer l'onglet</button>
+    <button data-tab-act="close-others">Fermer les autres</button>
+    <button data-tab-act="close-right">Fermer à droite</button>
+    <hr/>
+    <button data-tab-act="open-browser">Ouvrir dans le navigateur</button>
+    <button data-tab-act="open-window">Nouvelle fenêtre</button>
+    <hr/>
+    <button data-tab-act="split-right">Diviser à droite</button>
+    <button data-tab-act="split-bottom">Diviser en bas</button>
+    <hr/>
+    <button data-tab-act="mute">${tab.muted?"Rétablir le son":"Couper le son"}</button>
+    <button data-tab-act="pin">${tab.pinned?"Désépingler":"Épingler l'onglet"}</button>
+    <button data-tab-act="rename"${tab.pinned?"":" disabled"}>Renommer l'onglet épinglé</button>
+    ${otherGroups.length?`<hr/><div class="context-label">Ouvrir dans une autre app</div>${otherGroups.map(({g,apps})=>`<div class="context-label">${esc(g.name)}</div>${apps.map(a=>`<button data-tab-act="open-app" data-app-id="${esc(a.id)}">${esc(a.name)}</button>`).join("")}`).join("")}`:""}
+  </div>`;
+}
+
+function renderWorkspaceMenu(menu) {
+  if (menu?.kind !== "workspace") return "";
+  return `<div class="context-menu" style="left:${menu.x}px;top:${menu.y}px">
+    <button data-ws-act="properties">Propriétés groupe</button>
+    <button data-ws-act="previous">Groupe précédent</button>
+    <button data-ws-act="next">Groupe suivant</button>
+  </div>`;
+}
+
+function renderPageMenu(menu) {
+  if (menu?.kind !== "page") return "";
+  const tab = activeTab(), app = activeApp();
+  const x = menu.x, y = menu.y;
+  return `<div class="context-menu page-menu" style="left:${x}px;top:${y}px">
+    <div class="context-label">Page</div>
+    <button data-page-act="back">Retour</button>
+    <button data-page-act="forward">Avant</button>
+    <button data-page-act="reload">Recharger</button>
+    <button data-page-act="share">Partager</button>
+    <button data-page-act="secret">${tab?.secret?"Retirer secret":"Onglet secret"}</button>
+    <button data-page-act="hide-secrets">${S.secretsHidden?"Afficher secrets":"Cacher secrets"}</button>
+    <button data-page-act="mask-url">${S.maskUrl?"Afficher URL":"Masquer URL"}</button>
+    <button data-page-act="external">Ouvrir navigateur</button>
+    <div class="context-label">App</div>
+    <button data-page-act="properties">Propriétés app</button>
+    <button data-page-act="duplicate">Dupliquer app</button>
+    <button data-page-act="notifications">${app?.notifications?"Couper notifs":"Activer notifs"}</button>
+    <button data-page-act="hidden">${app?.hidden?"Afficher app":"Cacher app"}</button>
+    <button data-page-act="clear-count">Reset compteur</button>
+    <button data-page-act="delete" class="danger-text">Supprimer app</button>
+    <div class="context-label">Groupe</div>
+    <button data-page-act="ws-properties">Propriétés groupe</button>
+    <button data-page-act="ws-previous">Groupe précédent</button>
+    <button data-page-act="ws-next">Groupe suivant</button>
+  </div>`;
+}
+
 
 function renderAddModal() {
-  return `
-    <div class="modal-backdrop" id="add-modal">
-      <form class="modal">
-        <h2>Ajouter une app</h2>
-        <div class="field">
-          <label for="app-name">Nom</label>
-          <input id="app-name" name="name" placeholder="Ex: Perplexity" required />
-        </div>
-        <div class="field">
-          <label for="app-url">URL</label>
-          <input id="app-url" name="url" placeholder="https://example.com" required />
-        </div>
-        <div class="modal-actions">
-          <button type="button" class="secondary" data-close-add-modal>Annuler</button>
-          <button type="submit" class="primary">Ajouter</button>
-        </div>
-      </form>
-    </div>
-  `;
+  return `<div class="modal-backdrop" id="add-modal">
+    <form class="modal" data-add-form>
+      <h2>Ajouter une app</h2>
+      <div class="field"><label>Nom<input name="name" placeholder="Ex: Perplexity" required /></label></div>
+      <div class="field"><label>URL<input name="url" placeholder="https://example.com" required /></label></div>
+      <div class="modal-actions">
+        <button type="button" class="secondary" data-close-add>Annuler</button>
+        <button type="submit" class="primary">Ajouter</button>
+      </div>
+    </form>
+  </div>`;
 }
 
-function renderPropertiesModal(active) {
-  const app = propertiesAppId ? findApp(propertiesAppId) : active;
-  if (!propertiesAppId || !app) return "";
-  const icon = app.iconImage || faviconUrl(app.url);
-  return `
-    <div class="modal-backdrop open" id="properties-modal">
-      <form class="modal">
-        <h2>Propriétés app</h2>
-        <div class="property-head">
-          <span class="app-icon large" style="background:${escapeHtml(app.color)}">
-            ${icon ? `<img src="${escapeHtml(icon)}" alt="" />` : escapeHtml(iconText(app.name))}
-          </span>
-          <div>
-            <strong>${escapeHtml(app.name)}</strong>
-            <small>${escapeHtml(hostnameFromUrl(app.url))}</small>
-          </div>
-        </div>
-        <div class="field"><label for="prop-name">Nom</label><input id="prop-name" name="name" value="${escapeHtml(app.name)}" required /></div>
-        <div class="field"><label for="prop-url">URL</label><input id="prop-url" name="url" value="${escapeHtml(app.url)}" required /></div>
-        <div class="field"><label for="prop-color">Couleur icône</label><input id="prop-color" name="color" type="color" value="${escapeHtml(app.color)}" /></div>
-        <div class="field"><label for="prop-highlight">Highlight</label><input id="prop-highlight" name="highlightColor" type="color" value="${escapeHtml(app.highlightColor || "#ffffff")}" /></div>
-        <div class="field"><label for="prop-icon-image">Image icône URL</label><input id="prop-icon-image" name="iconImage" value="${escapeHtml(app.iconImage || "")}" placeholder="https://..." /></div>
-        <div class="field"><label for="prop-icon-upload">Uploader icône</label><input id="prop-icon-upload" type="file" accept="image/*" data-upload-app-icon="${app.id}" /></div>
-        <div class="field"><label for="prop-count">Compteur notifications</label><input id="prop-count" name="notificationCount" type="number" min="0" value="${Number(app.notificationCount || 0)}" /></div>
-        <label class="check-row"><input type="checkbox" name="notifications" ${app.notifications ? "checked" : ""} /> Notifications pour cette app</label>
-        <label class="check-row"><input type="checkbox" name="hidden" ${app.hidden ? "checked" : ""} /> App cachée</label>
-        <div class="modal-actions split">
-          <button type="button" class="danger" data-delete-app="${app.id}">Supprimer</button>
-          <span></span>
-          <button type="button" class="secondary" data-close-properties>Annuler</button>
-          <button type="submit" class="primary">Enregistrer</button>
-        </div>
-      </form>
-    </div>
-  `;
+function renderPropertiesModal() {
+  const app = ui.propertiesAppId ? findApp(ui.propertiesAppId) : null;
+  if (!app) return "";
+  const icon = app.iconImage || favicon(app.url);
+  return `<div class="modal-backdrop open" id="properties-modal">
+    <form class="modal" data-props-form data-app-id="${esc(app.id)}">
+      <h2>Propriétés app</h2>
+      <div class="property-head">
+        <span class="app-icon large" style="background:${esc(app.color)}">${icon?`<img src="${esc(icon)}" alt="" />`:`${esc(initials(app.name))}`}</span>
+        <div><strong>${esc(app.name)}</strong><small>${esc(hostname(app.url))}</small>${app.partitionKey&&app.partitionKey!==app.id?`<small class="clone-info">Clone de ${esc(app.partitionKey)}</small>`:""}</div>
+      </div>
+      <div class="field prop-ref"><label>Référence<input readonly value="${esc(app.id)}" onclick="this.select()" title="Identifiant unique de l'app" /></label></div>
+      <div class="field"><label>Nom<input name="name" value="${esc(app.name)}" required /></label></div>
+      <div class="field"><label>URL<input name="url" value="${esc(app.url)}" required /></label></div>
+      <div class="field"><label>Couleur icône<input name="color" type="color" value="${esc(app.color)}" /></label></div>
+      <div class="field"><label>Highlight<input name="highlightColor" type="color" value="${esc(app.highlightColor||"#ffffff")}" /></label></div>
+      <div class="field"><label>Image icône URL<input name="iconImage" value="${esc(app.iconImage||"")}" placeholder="https://..." /></label></div>
+      <div class="field"><label>Uploader icône<input type="file" accept="image/*" data-upload-app-icon="${esc(app.id)}" /></label></div>
+      <div class="field"><label>Priorité<input name="priority" type="number" value="${Number(app.priority||0)}" /></label></div>
+      <div class="field"><label>Compteur notifs<input name="notificationCount" type="number" min="0" value="${Number(app.notificationCount||0)}" /></label></div>
+      <label class="check-row"><input type="checkbox" name="notifications"${app.notifications?" checked":""}> Notifications</label>
+      <label class="check-row"><input type="checkbox" name="cachable"${app.cachable?" checked":""}> App cachable</label>
+      <label class="check-row"><input type="checkbox" name="hidden"${app.hidden?" checked":""}> App cachée</label>
+      <label class="check-row"><input type="checkbox" name="secret"${app.secret?" checked":""}> Mode secret par défaut</label>
+      <label class="check-row"><input type="checkbox" name="maskUrl"${app.maskUrl?" checked":""}> Masquer l'URL</label>
+      <div class="modal-actions split">
+        <button type="button" class="danger" data-delete-app="${esc(app.id)}">Supprimer</button>
+        <span></span>
+        <button type="button" class="secondary" data-close-props>Annuler</button>
+        <button type="submit" class="primary">Enregistrer</button>
+      </div>
+    </form>
+  </div>`;
 }
 
 function renderWorkspaceModal() {
-  const workspace = propertiesWorkspaceId ? findWorkspace(propertiesWorkspaceId) : null;
-  if (!workspace) return "";
-  return `
-    <div class="modal-backdrop open" id="workspace-modal">
-      <form class="modal">
-        <h2>Propriétés groupe</h2>
-        <div class="property-head">
-          <span class="workspace-button active preview" style="background:${escapeHtml(workspace.color)}">
-            ${workspace.iconImage ? `<img src="${escapeHtml(workspace.iconImage)}" alt="" />` : escapeHtml(workspace.icon)}
-          </span>
-          <div><strong>${escapeHtml(workspace.name)}</strong><small>Raccourci Cmd/Ctrl+1..9</small></div>
-        </div>
-        <div class="field"><label for="workspace-name">Nom</label><input id="workspace-name" name="name" value="${escapeHtml(workspace.name)}" required /></div>
-        <div class="field"><label for="workspace-icon">Icône texte</label><input id="workspace-icon" name="icon" value="${escapeHtml(workspace.icon)}" maxlength="2" required /></div>
-        <div class="field"><label for="workspace-icon-image">Icône image URL</label><input id="workspace-icon-image" name="iconImage" value="${escapeHtml(workspace.iconImage || "")}" placeholder="https://..." /></div>
-        <div class="field"><label for="workspace-icon-upload">Uploader icône</label><input id="workspace-icon-upload" type="file" accept="image/*" data-upload-workspace-icon="${workspace.id}" /></div>
-        <div class="field"><label for="workspace-color">Couleur groupe</label><input id="workspace-color" name="color" type="color" value="${escapeHtml(workspace.color)}" /></div>
-        <div class="field"><label for="workspace-highlight">Highlight</label><input id="workspace-highlight" name="highlightColor" type="color" value="${escapeHtml(workspace.highlightColor || "#ffffff")}" /></div>
-        <div class="modal-actions">
-          <button type="button" class="secondary" data-close-workspace>Annuler</button>
-          <button type="submit" class="primary">Enregistrer</button>
-        </div>
-      </form>
-    </div>
-  `;
+  const ws = ui.propertiesWorkspaceId ? findWorkspace(ui.propertiesWorkspaceId) : null;
+  if (!ws) return "";
+  return `<div class="modal-backdrop open" id="workspace-modal">
+    <form class="modal" data-ws-form data-ws-id="${esc(ws.id)}">
+      <h2>Propriétés groupe</h2>
+      <div class="property-head">
+        <span class="workspace-button active preview" style="background:${esc(ws.color)}">${ws.iconImage?`<img src="${esc(ws.iconImage)}" alt="" />`:`${esc(ws.icon)}`}</span>
+        <div><strong>${esc(ws.name)}</strong><small>Raccourci Cmd/Ctrl+1..9</small></div>
+      </div>
+      <div class="field"><label>Nom<input name="name" value="${esc(ws.name)}" required /></label></div>
+      <div class="field"><label>Icône texte<input name="icon" value="${esc(ws.icon)}" maxlength="2" required /></label></div>
+      <div class="field"><label>Icône image URL<input name="iconImage" value="${esc(ws.iconImage||"")}" placeholder="https://..." /></label></div>
+      <div class="field"><label>Uploader icône<input type="file" accept="image/*" data-upload-ws-icon="${esc(ws.id)}" /></label></div>
+      <div class="field"><label>Couleur<input name="color" type="color" value="${esc(ws.color)}" /></label></div>
+      <div class="field"><label>Highlight<input name="highlightColor" type="color" value="${esc(ws.highlightColor||"#ffffff")}" /></label></div>
+      <div class="field"><label>Priorité<input name="priority" type="number" value="${Number(ws.priority||0)}" /></label></div>
+      <label class="check-row"><input type="checkbox" name="collapsed"${ws.collapsed?" checked":""}> Groupe replié par défaut</label>
+      <div class="modal-actions">
+        <button type="button" class="secondary" data-close-ws-modal>Annuler</button>
+        <button type="submit" class="primary">Enregistrer</button>
+      </div>
+    </form>
+  </div>`;
 }
 
 function renderShareModal() {
-  if (!shareDraft) return "";
-  return `
-    <div class="modal-backdrop open" id="share-modal">
-      <div class="modal">
-        <h2>Partager</h2>
-        <div class="share-preview">${escapeHtml(shareText())}</div>
-        <div class="modal-actions share-actions">
-          <button type="button" class="secondary" data-share-target="copy">Copier</button>
-          <button type="button" class="secondary" data-share-target="x">X</button>
-          <button type="button" class="secondary" data-share-target="linkedin">LinkedIn</button>
-          <button type="button" class="secondary" data-share-target="buffer">Buffer</button>
-          <button type="button" class="primary" data-share-target="mail">Mail</button>
-        </div>
-        <div class="modal-actions">
-          <button type="button" class="secondary" data-close-share>Fermer</button>
-        </div>
+  if (!ui.shareDraft) return "";
+  return `<div class="modal-backdrop open" id="share-modal">
+    <div class="modal">
+      <h2>Partager</h2>
+      <div class="share-preview">${esc(shareText())}</div>
+      <div class="modal-actions share-actions">
+        <button class="secondary" data-share-to="copy">Copier</button>
+        <button class="secondary" data-share-to="x">X</button>
+        <button class="secondary" data-share-to="linkedin">LinkedIn</button>
+        <button class="secondary" data-share-to="buffer">Buffer</button>
+        <button class="primary" data-share-to="mail">Mail</button>
+      </div>
+      <div class="modal-actions"><button class="secondary" data-close-share>Fermer</button></div>
+    </div>
+  </div>`;
+}
+
+function renderSettings() {
+  if (!S.settingsOpen) return "";
+  const sections = [["general","⌘","Général"],["downloads","⇩","Téléchargements"],["notifications","♢","Notifications"],["shortcuts","⌨","Raccourcis"],["permissions","◇","Micro/caméra"],["fonts","T","Polices"],["sync","↻","Sync"],["extensions","✜","Extensions"],["import","⇳","Importer/Exporter"],["advanced","⌁","Avancé"]];
+  return `<div class="settings-panel">
+    <aside class="settings-nav">
+      <h2>Paramètres</h2>
+      ${sections.map(([id,ico,label])=>`<button class="${S.settingsSection===id?"active":""}" data-settings-nav="${id}"><span>${ico}</span>${label}</button>`).join("")}
+    </aside>
+    <section class="settings-body">
+      <button class="settings-close" data-close-settings>×</button>
+      ${renderSettingsBody()}
+    </section>
+  </div>`;
+}
+
+function renderSettingsBody() {
+  const sw = (key) => `<button class="switch${S[key]?" on":""}" data-toggle="${esc(key)}"><span></span></button>`;
+  if (S.settingsSection === "general") return `
+    <div class="settings-card"><div><h3>Masquer l'URL</h3><p>Affiche seulement le domaine.</p></div>${sw("maskUrl")}</div>
+    <div class="settings-card"><div><h3>Mode interface</h3><p>A compact, B normal, C large.</p></div>
+      <div class="segmented settings-segmented">${["compact","normal","large"].map(d=>`<button class="${S.density===d?"active":""}" data-density="${d}">${{compact:"A",normal:"B",large:"C"}[d]}</button>`).join("")}</div></div>
+    <div class="settings-card"><div><h3>Apps cachées</h3><p>Affiche temporairement les apps cachées.</p></div>${sw("showHiddenApps")}</div>
+    <div class="settings-card"><div><h3>Masquer apps cachables</h3><p>Cache les apps marquées cachables.</p></div>${sw("hideCachableApps")}</div>
+    <div class="settings-card"><div><h3>Colonne compacte</h3><p>Icônes seules dans la sidebar.</p></div>${sw("sidebarCollapsed")}</div>
+    <div class="settings-card column"><h3>Taille des icônes</h3>
+      <div class="range-grid">
+        <label><span>Groupes <strong>${S.groupIconSize}px</strong></span><input type="range" min="14" max="72" value="${S.groupIconSize}" data-icon-size="group" /></label>
+        <label><span>Apps <strong>${S.appIconSize}px</strong></span><input type="range" min="12" max="58" value="${S.appIconSize}" data-icon-size="app" /></label>
+      </div>
+    </div>`;
+  if (S.settingsSection === "extensions") return `
+    <div class="settings-card"><div><h3>Bloqueur de publicités</h3><p>Filtre les publicités courantes.</p></div>${sw("adBlockEnabled")}</div>
+    <div class="settings-card column">
+      <div class="settings-card-head"><div><h3>Extensions Chrome</h3><p>Charge des extensions unpacked Chromium.</p></div><button class="primary" data-add-ext>Ajouter un dossier</button></div>
+      <div class="extension-list">${S.chromeExtensions.length?S.chromeExtensions.map(renderExtRow).join(""):`<div class="empty-settings">Aucune extension chargée.</div>`}</div>
+    </div>`;
+  if (S.settingsSection === "downloads") return `
+    <div class="settings-card"><div><h3>Demander où enregistrer</h3></div>${sw("askDownloadLocation")}</div>
+    <div class="settings-card column"><h3>Dossier par défaut</h3><input class="settings-input" data-text-setting="downloadsPath" value="${esc(S.downloadsPath)}" placeholder="~/Downloads" /></div>`;
+  if (S.settingsSection === "notifications") return `
+    <div class="settings-card"><div><h3>Notifications globales</h3></div>${sw("globalNotifications")}</div>
+    <div class="settings-card"><div><h3>Badges sur les apps</h3></div>${sw("notificationBadges")}</div>
+    <div class="settings-card"><div><h3>Son de notification</h3></div>${sw("notificationSound")}</div>`;
+  if (S.settingsSection === "shortcuts") return `
+    <div class="settings-card"><div><h3>Raccourcis clavier</h3><p>Cmd/Ctrl+1..9, Alt+flèches.</p></div>${sw("shortcutsEnabled")}</div>
+    <div class="settings-card"><div><h3>Aide compacte</h3></div>${sw("compactShortcuts")}</div>`;
+  if (S.settingsSection === "permissions") return `
+    <div class="settings-card column"><h3>Autorisations</h3>
+      <div class="settings-select-grid">${["cameraPermission","microphonePermission","locationPermission"].map((k,i)=>{
+        const labels=["Caméra","Micro","Localisation"];
+        return `<label><span>${labels[i]}</span><select data-perm="${esc(k)}">${["ask","allow","block"].map(v=>`<option value="${v}"${S[k]===v?" selected":""}>${{ask:"Demander",allow:"Autoriser",block:"Bloquer"}[v]}</option>`).join("")}</select></label>`;
+      }).join("")}</div></div>`;
+  if (S.settingsSection === "fonts") return `
+    <div class="settings-card column"><h3>Police de l'interface</h3>
+      <div class="settings-select-grid">
+        <label><span>Famille</span><select data-font-family>
+          ${[["system","Système (défaut)"],["sans","Sans-serif"],["serif","Serif"],["mono","Monospace"]].map(([v,l])=>`<option value="${v}"${S.uiFont===v?" selected":""}>${l}</option>`).join("")}
+        </select></label>
       </div>
     </div>
-  `;
+    <div class="settings-card column"><h3>Taille du texte</h3>
+      <div class="range-grid"><label><span>Interface <strong>${S.fontScale}%</strong></span><input type="range" min="80" max="130" step="5" value="${S.fontScale}" data-range-setting="fontScale" /></label></div>
+    </div>`;
+  if (S.settingsSection === "sync") return `
+    <div class="settings-card"><div><h3>Sync locale</h3></div>${sw("syncEnabled")}</div>`;
+  if (S.settingsSection === "import") return `
+    <div class="settings-card column"><h3>Importer / Exporter</h3><div class="settings-actions">
+      <button class="primary" data-export>Exporter JSON</button>
+      <button class="secondary" data-import>Importer JSON</button>
+      <input type="file" id="import-file" accept="application/json" hidden />
+    </div></div>`;
+  if (S.settingsSection === "advanced") return `
+    <form class="settings-card column" data-skin-form>
+      <h3>Skin personnalisé</h3>
+      <div class="color-grid">
+        <label>Fond<input type="color" name="cream" value="${esc(S.customSkin.cream)}" /></label>
+        <label>Sidebar<input type="color" name="sidebar" value="${esc(S.customSkin.sidebar)}" /></label>
+        <label>Accent<input type="color" name="accent" value="${esc(S.customSkin.accent)}" /></label>
+      </div>
+      <div class="field"><label>Skin<select data-skin-select>
+        ${["biscuit","dark","mono","custom"].map(v=>`<option value="${v}"${S.skin===v?" selected":""}>${v.charAt(0).toUpperCase()+v.slice(1)}</option>`).join("")}
+      </select></label></div>
+      <button class="primary" type="submit">Appliquer</button>
+    </form>`;
+  return `<div class="settings-card"><h3>Paramètres</h3></div>`;
 }
 
-function renderSettingsModal() {
-  if (!state.settingsOpen) return "";
-  const items = [
-    ["general", "Général"],
-    ["downloads", "Téléchargements"],
-    ["notifications", "Notifications"],
-    ["shortcuts", "Raccourcis"],
-    ["permissions", "Micro/caméra"],
-    ["fonts", "Polices"],
-    ["sync", "Sync"],
-    ["extensions", "Extensions"],
-    ["import", "Importer / Exporter"],
-    ["advanced", "Avancé"]
-  ];
-  return `
-    <div class="settings-panel">
-      <aside class="settings-nav">
-        <h2>Paramètres</h2>
-        ${items
-          .map(
-            ([id, label]) => `<button class="${state.settingsSection === id ? "active" : ""}" data-settings-section="${id}"><span>${settingsIcon(id)}</span>${label}</button>`
-          )
-          .join("")}
-      </aside>
-      <section class="settings-body">
-        <button class="settings-close" data-close-settings>×</button>
-        ${renderSettingsSection()}
-      </section>
-    </div>
-  `;
+function renderExtRow(e) {
+  const s={loaded:"chargée",pending:"en attente",disabled:"désactivée",error:"erreur"}[e.status]||e.status;
+  return `<div class="extension-row">
+    <div class="extension-main"><strong>${esc(e.name||"Extension")}</strong><small>${esc(e.path)}</small>${e.error?`<em>${esc(e.error)}</em>`:""}</div>
+    <span class="extension-status ${esc(e.status)}">${esc(s)}</span>
+    <button class="switch${e.enabled?" on":""}" data-toggle-ext="${esc(e.id)}"><span></span></button>
+    <button class="secondary" data-remove-ext="${esc(e.id)}">Retirer</button>
+  </div>`;
 }
 
-function settingsIcon(id) {
-  return {
-    general: "⌘",
-    downloads: "⇩",
-    notifications: "♢",
-    shortcuts: "⌨",
-    permissions: "◇",
-    fonts: "T",
-    sync: "↻",
-    extensions: "✜",
-    import: "⇳",
-    advanced: "⌁"
-  }[id] || "•";
-}
+// ── WEBVIEW WIRING ────────────────────────────────────────────────────────────
+// Only webviews need post-render wiring — their events don't bubble through the DOM.
 
-function renderSettingsSection() {
-  if (state.settingsSection === "general") {
-    return `
-      <div class="settings-card">
-        <div>
-          <h3>Masquer l'URL dans l'écran principal</h3>
-          <p>Affiche seulement le domaine dans la barre principale.</p>
-        </div>
-        <button class="switch ${state.maskUrl ? "on" : ""}" data-toggle-mask-url><span></span></button>
-      </div>
-      <div class="settings-card">
-        <div>
-          <h3>Mode interface</h3>
-          <p>A réduit à 50 %, B normal, C augmenté à 125 %.</p>
-        </div>
-        <div class="segmented settings-segmented">
-          ${["compact", "normal", "large"].map((item) => `<button class="${state.density === item ? "active" : ""}" data-density="${item}">${densityLabel(item)}</button>`).join("")}
-        </div>
-      </div>
-      <div class="settings-card">
-        <div>
-          <h3>Afficher les apps cachées</h3>
-          <p>Contrôle l'affichage temporaire des apps cachées.</p>
-        </div>
-        <button class="switch ${state.showHiddenApps ? "on" : ""}" data-toggle-hidden-apps><span></span></button>
-      </div>
-      <div class="settings-card">
-        <div>
-          <h3>Colonne apps compacte</h3>
-          <p>Affiche seulement les icônes des sites quand c'est activé.</p>
-        </div>
-        <button class="switch ${state.sidebarCollapsed ? "on" : ""}" data-toggle-sidebar><span></span></button>
-      </div>
-      <div class="settings-card column">
-        <h3>Taille des icônes</h3>
-        <p>Ajuste séparément la colonne groupes et la colonne apps.</p>
-        <div class="range-grid">
-          <label>
-            <span>Groupes <strong>${state.groupIconSize}px</strong></span>
-            <input type="range" min="30" max="72" step="1" value="${state.groupIconSize}" data-icon-size="group" />
-          </label>
-          <label>
-            <span>Apps <strong>${state.appIconSize}px</strong></span>
-            <input type="range" min="22" max="58" step="1" value="${state.appIconSize}" data-icon-size="app" />
-          </label>
-        </div>
-      </div>
-      <div class="settings-card">
-        <div>
-          <h3>Donate</h3>
-          <p>Emplacement réservé dans les réglages globaux.</p>
-        </div>
-        <button class="secondary" type="button">Donate</button>
-      </div>
-    `;
-  }
-  if (state.settingsSection === "extensions") {
-    return `
-      <div class="settings-card">
-        <div>
-          <h3>Activer le bloqueur de publicités</h3>
-          <p>Emplacement prévu pour listes de filtres intégrées.</p>
-        </div>
-        <button class="switch ${state.adBlockEnabled ? "on" : ""}" data-setting-toggle="adBlockEnabled"><span></span></button>
-      </div>
-      <div class="settings-card column">
-        <div class="settings-card-head">
-          <div>
-            <h3>Extensions Chrome locales</h3>
-            <p>Charge des extensions unpacked compatibles Chromium depuis un dossier local.</p>
-          </div>
-          <button class="primary" type="button" data-add-chrome-extension>Ajouter un dossier</button>
-        </div>
-        <div class="extension-list">
-          ${
-            state.chromeExtensions.length
-              ? state.chromeExtensions.map(renderChromeExtensionRow).join("")
-              : `<div class="empty-settings">Aucune extension chargée.</div>`
-          }
-        </div>
-      </div>
-    `;
-  }
-  if (state.settingsSection === "downloads") {
-    return `
-      <div class="settings-card">
-        <div>
-          <h3>Demander où enregistrer</h3>
-          <p>Active une confirmation avant chaque téléchargement.</p>
-        </div>
-        <button class="switch ${state.askDownloadLocation ? "on" : ""}" data-setting-toggle="askDownloadLocation"><span></span></button>
-      </div>
-      <div class="settings-card column">
-        <h3>Dossier par défaut</h3>
-        <p>Chemin mémorisé pour la configuration utilisateur.</p>
-        <input class="settings-input" data-setting-text="downloadsPath" value="${escapeHtml(state.downloadsPath)}" placeholder="Ex: ~/Downloads" />
-      </div>
-    `;
-  }
-  if (state.settingsSection === "notifications") {
-    return `
-      <div class="settings-card">
-        <div>
-          <h3>Notifications globales</h3>
-          <p>Autorise ou bloque les notifications des apps web.</p>
-        </div>
-        <button class="switch ${state.globalNotifications ? "on" : ""}" data-setting-toggle="globalNotifications"><span></span></button>
-      </div>
-      <div class="settings-card">
-        <div>
-          <h3>Badges sur les apps</h3>
-          <p>Affiche les compteurs de notifications sur les icônes.</p>
-        </div>
-        <button class="switch ${state.notificationBadges ? "on" : ""}" data-setting-toggle="notificationBadges"><span></span></button>
-      </div>
-      <div class="settings-card">
-        <div>
-          <h3>Son de notification</h3>
-          <p>Option mémorisée pour une intégration sonore ultérieure.</p>
-        </div>
-        <button class="switch ${state.notificationSound ? "on" : ""}" data-setting-toggle="notificationSound"><span></span></button>
-      </div>
-    `;
-  }
-  if (state.settingsSection === "shortcuts") {
-    return `
-      <div class="settings-card">
-        <div>
-          <h3>Raccourcis clavier</h3>
-          <p>Cmd/Ctrl+1..9, Alt+flèches et onglets secrets.</p>
-        </div>
-        <button class="switch ${state.shortcutsEnabled ? "on" : ""}" data-setting-toggle="shortcutsEnabled"><span></span></button>
-      </div>
-      <div class="settings-card">
-        <div>
-          <h3>Aide compacte</h3>
-          <p>Mémorise l'affichage réduit des indications de raccourcis.</p>
-        </div>
-        <button class="switch ${state.compactShortcuts ? "on" : ""}" data-setting-toggle="compactShortcuts"><span></span></button>
-      </div>
-    `;
-  }
-  if (state.settingsSection === "permissions") {
-    return `
-      <div class="settings-card column">
-        <h3>Autorisations sites web</h3>
-        <p>Choisis le comportement par défaut pour les apps embarquées.</p>
-        <div class="settings-select-grid">
-          ${permissionSelect("cameraPermission", "Caméra")}
-          ${permissionSelect("microphonePermission", "Micro")}
-          ${permissionSelect("locationPermission", "Localisation")}
-        </div>
-      </div>
-    `;
-  }
-  if (state.settingsSection === "fonts") {
-    return `
-      <div class="settings-card column">
-        <h3>Taille du texte</h3>
-        <p>Ajuste la lisibilité globale sans changer la taille des onglets.</p>
-        <div class="range-grid">
-          <label>
-            <span>Interface <strong>${state.fontScale}%</strong></span>
-            <input type="range" min="80" max="130" step="5" value="${state.fontScale}" data-setting-range="fontScale" />
-          </label>
-        </div>
-      </div>
-    `;
-  }
-  if (state.settingsSection === "sync") {
-    return `
-      <div class="settings-card">
-        <div>
-          <h3>Sync locale</h3>
-          <p>Prépare la synchronisation future via fichier ou compte utilisateur.</p>
-        </div>
-        <button class="switch ${state.syncEnabled ? "on" : ""}" data-setting-toggle="syncEnabled"><span></span></button>
-      </div>
-      <div class="settings-card column">
-        <h3>État sync</h3>
-        <p>${state.syncEnabled ? "Sync activée côté configuration. Aucun compte distant n'est connecté." : "Sync désactivée. Les données restent dans cette installation."}</p>
-      </div>
-    `;
-  }
-  if (state.settingsSection === "import") {
-    return `
-      <div class="settings-card column">
-        <h3>Importer / Exporter les paramètres</h3>
-        <p>Sauvegarde tous les groupes, apps, couleurs, icônes, skins et onglets.</p>
-        <div class="settings-actions">
-          <button class="primary" data-export-config>Exporter JSON</button>
-          <button class="secondary" data-import-config>Importer JSON</button>
-          <input type="file" data-import-config-file accept="application/json" hidden />
-        </div>
-      </div>
-    `;
-  }
-  if (state.settingsSection === "advanced") {
-    return `
-      <form class="settings-card column" data-custom-skin-form>
-        <h3>Skin personnalisé</h3>
-        <p>Définit les couleurs globales du chrome CookieRS.</p>
-        <div class="color-grid">
-          <label>Fond <input type="color" name="cream" value="${escapeHtml(state.customSkin.cream)}" /></label>
-          <label>Sidebar <input type="color" name="sidebar" value="${escapeHtml(state.customSkin.sidebar)}" /></label>
-          <label>Accent <input type="color" name="accent" value="${escapeHtml(state.customSkin.accent)}" /></label>
-        </div>
-        <div class="field">
-          <label>Skin</label>
-          <select data-skin>
-            <option value="biscuit" ${state.skin === "biscuit" ? "selected" : ""}>Biscuit</option>
-            <option value="dark" ${state.skin === "dark" ? "selected" : ""}>Dark</option>
-            <option value="mono" ${state.skin === "mono" ? "selected" : ""}>Mono</option>
-            <option value="custom" ${state.skin === "custom" ? "selected" : ""}>Custom</option>
-          </select>
-        </div>
-        <button class="primary" type="submit">Appliquer le skin</button>
-      </form>
-    `;
-  }
-  return `
-    <div class="settings-card">
-      <div>
-        <h3>${escapeHtml(itemsLabel(state.settingsSection))}</h3>
-        <p>Section prévue pour les réglages CookieRS.</p>
-      </div>
-    </div>
-  `;
-}
+let chromeExtRestored = false;
 
-function permissionSelect(key, label) {
-  const value = normalizePermission(state[key]);
-  return `
-    <label>
-      <span>${label}</span>
-      <select data-setting-select="${key}">
-        <option value="ask" ${value === "ask" ? "selected" : ""}>Demander</option>
-        <option value="allow" ${value === "allow" ? "selected" : ""}>Autoriser</option>
-        <option value="block" ${value === "block" ? "selected" : ""}>Bloquer</option>
-      </select>
-    </label>
-  `;
-}
+function wireWebviews() {
+  document.querySelectorAll("webview").forEach(wv => {
+    if (wv.__wired) return;
+    wv.__wired = true;
 
-function renderChromeExtensionRow(extension) {
-  const statusLabel = {
-    loaded: "chargée",
-    pending: "en attente",
-    disabled: "désactivée",
-    error: "erreur"
-  }[extension.status] || extension.status;
-  return `
-    <div class="extension-row">
-      <div class="extension-main">
-        <strong>${escapeHtml(extension.name || "Extension Chrome")}</strong>
-        <small>${escapeHtml(extension.path)}</small>
-        ${extension.error ? `<em>${escapeHtml(extension.error)}</em>` : ""}
-      </div>
-      <span class="extension-status ${escapeHtml(extension.status)}">${escapeHtml(statusLabel)}</span>
-      <button class="switch ${extension.enabled ? "on" : ""}" data-toggle-chrome-extension="${escapeHtml(extension.id)}"><span></span></button>
-      <button class="secondary" type="button" data-remove-chrome-extension="${escapeHtml(extension.id)}">Retirer</button>
-    </div>
-  `;
-}
-
-function itemsLabel(id) {
-  return {
-    downloads: "Téléchargements",
-    notifications: "Notifications",
-    shortcuts: "Raccourcis",
-    permissions: "Micro/caméra",
-    fonts: "Polices",
-    sync: "Sync"
-  }[id] || "Réglages";
-}
-
-function renderPageMenu() {
-  if (!pageMenu) return "";
-  const tab = getActiveTab();
-  const app = activeApp();
-  const feeds = rssFeedsForActiveTab();
-  return `
-    <div class="context-menu page-menu" style="right:22px;top:72px">
-      <div class="context-label">Page</div>
-      <button data-page-action="back">Retour</button>
-      <button data-page-action="forward">Avant</button>
-      <button data-page-action="reload">Recharger</button>
-      <button data-page-action="share">Partager sélection + URL</button>
-      <button data-page-action="rss">${feeds.length ? `RSS détecté (${feeds.length})` : "Détecter RSS"}</button>
-      <button data-page-action="secret">${tab?.secret ? "Retirer secret" : "Onglet secret"}</button>
-      <button data-page-action="hide-secrets">${state.secretsHidden ? "Afficher secrets" : "Cacher secrets"}</button>
-      <button data-page-action="mask-url">${state.maskUrl ? "Afficher URL" : "Masquer URL"}</button>
-      <button data-page-action="external">Ouvrir navigateur</button>
-      <div class="context-label">App</div>
-      <button data-page-action="app-open">Ouvrir ${escapeHtml(app?.name || "app")}</button>
-      <button data-page-action="app-new-tab">Nouvel onglet app</button>
-      <button data-page-action="app-secret-tab">Onglet secret app</button>
-      <button data-page-action="properties">Propriétés app</button>
-      <button data-page-action="app-duplicate">Dupliquer app</button>
-      <button data-page-action="app-notifications">${app?.notifications ? "Couper notifications" : "Activer notifications"}</button>
-      <button data-page-action="app-hidden">${app?.hidden ? "Afficher app" : "Cacher app"}</button>
-      <button data-page-action="app-clear-count">Reset compteur</button>
-      <button data-page-action="app-delete" class="danger-text">Supprimer app</button>
-      <div class="context-label">Groupe</div>
-      <button data-page-action="workspace-properties">Propriétés groupe</button>
-      <button data-page-action="workspace-previous">Groupe précédent</button>
-      <button data-page-action="workspace-next">Groupe suivant</button>
-    </div>
-  `;
-}
-
-function renderRssMenu() {
-  if (!rssMenu) return "";
-  const feeds = rssFeedsForActiveTab();
-  return `
-    <div class="context-menu rss-menu" style="right:76px;top:72px">
-      <div class="context-label">RSS</div>
-      ${
-        feeds.length
-          ? feeds.map((feed, index) => `<button data-rss-open="${index}">${escapeHtml(feed.title || feed.type || "Flux RSS")}</button>`).join("")
-          : `<button type="button">Aucun flux détecté</button>`
-      }
-    </div>
-  `;
-}
-
-function renderContextMenu() {
-  if (!contextMenu) return "";
-  const app = findApp(contextMenu.appId);
-  if (!app) return "";
-  return `
-    <div class="context-menu" style="left:${contextMenu.x}px;top:${contextMenu.y}px">
-      <button data-context-action="open">Ouvrir</button>
-      <button data-context-action="new-tab">Nouvel onglet</button>
-      <button data-context-action="secret-tab">Onglet secret</button>
-      <button data-context-action="properties">Propriétés</button>
-      <button data-context-action="duplicate">Dupliquer</button>
-      <button data-context-action="notifications">${app.notifications ? "Couper notifications" : "Activer notifications"}</button>
-      <button data-context-action="hidden">${app.hidden ? "Afficher" : "Cacher"}</button>
-      <button data-context-action="clear-count">Reset compteur</button>
-      <button data-context-action="delete" class="danger-text">Supprimer</button>
-    </div>
-  `;
-}
-
-function renderWorkspaceMenu() {
-  if (!workspaceMenu) return "";
-  return `
-    <div class="context-menu" style="left:${workspaceMenu.x}px;top:${workspaceMenu.y}px">
-      <button data-workspace-action="properties">Propriétés groupe</button>
-      <button data-workspace-action="previous">Groupe précédent</button>
-      <button data-workspace-action="next">Groupe suivant</button>
-    </div>
-  `;
-}
-
-function wireEvents() {
-  document.querySelectorAll("[data-workspace]").forEach((button) => {
-    button.addEventListener("click", () => selectWorkspace(button.dataset.workspace));
-    button.addEventListener("dragstart", (event) => {
-      event.dataTransfer.setData("text/cookiers-workspace", button.dataset.workspace);
+    wv.addEventListener("did-navigate", () => syncWv(wv));
+    wv.addEventListener("did-navigate-in-page", () => syncWv(wv));
+    wv.addEventListener("page-title-updated", e => updateWvTitle(wv, e.title));
+    wv.addEventListener("did-finish-load", () => { hookNotifications(wv); applyAdBlock(wv); applyMute(wv); injectWebviewFont(wv); });
+    wv.addEventListener("console-message", e => {
+      if (String(e.message||"").startsWith("__CROKETTS_NOTIFICATION__"))
+        incrementNotification(wv.dataset.appId);
     });
-    button.addEventListener("dragover", (event) => event.preventDefault());
-    button.addEventListener("drop", (event) => {
-      event.preventDefault();
-      moveWorkspace(event.dataTransfer.getData("text/cookiers-workspace"), button.dataset.workspace);
-    });
-    button.addEventListener("contextmenu", (event) => {
-      event.preventDefault();
-      workspaceMenu = { workspaceId: button.dataset.workspace, x: event.clientX, y: event.clientY };
-      contextMenu = null;
+    wv.addEventListener("new-window", e => { e.preventDefault(); window.crokETT?.openExternal?.(e.url); });
+
+    // Clic droit dans le webview — event Electron, ne remonte pas au document
+    wv.addEventListener("context-menu", e => {
+      // e.params.x/y = coords dans le referentiel du webview (CSS px)
+      // Fallback sur e.x/e.y si params absent (certaines versions Electron)
+      const px = e.params?.x ?? e.x ?? null;
+      const py = e.params?.y ?? e.y ?? null;
+      const rect = wv.getBoundingClientRect();
+      const menuX = px !== null ? rect.left + px : e.clientX ?? rect.left + rect.width / 2;
+      const menuY = py !== null ? rect.top  + py : e.clientY ?? rect.top  + rect.height / 2;
+      // Stocker la ref du webview pour que les actions ciblent le bon pane (split)
+      ui.menu = {
+        kind: "page",
+        x: Math.min(menuX, window.innerWidth  - 220),
+        y: Math.min(menuY, window.innerHeight - 420),
+        wv
+      };
       render();
     });
   });
 
-  document.querySelector("[data-workspace-properties]")?.addEventListener("click", (event) => {
-    propertiesWorkspaceId = event.currentTarget.dataset.workspaceProperties;
-    render();
-  });
-  document.querySelector("[data-add-workspace]")?.addEventListener("click", addWorkspace);
-
-  document.querySelectorAll("[data-toggle-sidebar]").forEach((button) => button.addEventListener("click", toggleSidebar));
-  document.querySelector("[data-toggle-hidden-apps]")?.addEventListener("click", toggleHiddenApps);
-  document.querySelectorAll("[data-open-settings]").forEach((button) => {
-    button.addEventListener("click", () => openSettings(button.dataset.openSettings || "general"));
-  });
-  document.querySelector("[data-close-settings]")?.addEventListener("click", closeSettings);
-  document.querySelectorAll("[data-settings-section]").forEach((button) => {
-    button.addEventListener("click", () => setSettingsSection(button.dataset.settingsSection));
-  });
-  document.querySelector("[data-toggle-mask-url]")?.addEventListener("click", toggleMaskUrl);
-  document.querySelector("[data-custom-skin-form]")?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    updateCustomSkin(new FormData(event.currentTarget));
-  });
-  document.querySelector("[data-export-config]")?.addEventListener("click", exportConfig);
-  document.querySelector("[data-import-config]")?.addEventListener("click", () => {
-    document.querySelector("[data-import-config-file]")?.click();
-  });
-  document.querySelector("[data-import-config-file]")?.addEventListener("change", (event) => {
-    importConfig(event.target.files?.[0]);
-  });
-  document.querySelectorAll("[data-density]").forEach((button) => button.addEventListener("click", () => setDensity(button.dataset.density)));
-  document.querySelectorAll("[data-icon-size]").forEach((input) => {
-    input.addEventListener("input", () => updateIconSize(input.dataset.iconSize, input.value));
-  });
-  document.querySelector("[data-skin]")?.addEventListener("change", (event) => setSkin(event.target.value));
-  document.querySelectorAll("[data-setting-toggle]").forEach((button) => {
-    button.addEventListener("click", () => updateSetting(button.dataset.settingToggle, !state[button.dataset.settingToggle]));
-  });
-  document.querySelectorAll("[data-setting-text]").forEach((input) => {
-    input.addEventListener("change", () => updateSetting(input.dataset.settingText, input.value));
-  });
-  document.querySelectorAll("[data-setting-select]").forEach((select) => {
-    select.addEventListener("change", () => updateSetting(select.dataset.settingSelect, normalizePermission(select.value)));
-  });
-  document.querySelectorAll("[data-setting-range]").forEach((input) => {
-    input.addEventListener("input", () => updateSetting(input.dataset.settingRange, clampNumber(input.value, 80, 130, 100)));
-  });
-
-  document.querySelectorAll("[data-app]").forEach((button) => {
-    button.addEventListener("click", () => {
-      if (button.dataset.workspaceApp) {
-        const [workspaceId, appId] = button.dataset.workspaceApp.split(":");
-        selectWorkspaceApp(workspaceId, appId);
-        return;
+  if (!chromeExtRestored) {
+    chromeExtRestored = true;
+    (async () => {
+      for (const e of S.chromeExtensions.filter(e => e.enabled)) {
+        try { Object.assign(e, await window.crokETT.loadChromeExtension(e.path)); }
+        catch(err) { e.status = "error"; e.error = err?.message || String(err); }
       }
-      selectApp(button.dataset.app);
-    });
-    button.addEventListener("dragstart", (event) => {
-      event.dataTransfer.setData("text/cookiers-app", button.dataset.app);
-    });
-    button.addEventListener("dragover", (event) => event.preventDefault());
-    button.addEventListener("drop", (event) => {
-      event.preventDefault();
-      moveApp(event.dataTransfer.getData("text/cookiers-app"), button.dataset.app);
-    });
-    button.addEventListener("contextmenu", (event) => {
-      event.preventDefault();
-      if (button.dataset.workspaceApp) {
-        const [workspaceId, appId] = button.dataset.workspaceApp.split(":");
-        state.activeWorkspaceId = workspaceId;
-        state.activeAppByWorkspace[workspaceId] = appId;
-      }
-      contextMenu = { appId: button.dataset.app, x: event.clientX, y: event.clientY };
-      workspaceMenu = null;
-      state.activeAppByWorkspace[state.activeWorkspaceId] = button.dataset.app;
-      saveState();
-      render();
-    });
-  });
-
-  document.querySelectorAll("[data-tab]").forEach((button) => button.addEventListener("click", () => selectTab(button.dataset.tab)));
-  document.querySelectorAll("[data-close-tab]").forEach((button) => {
-    button.addEventListener("click", (event) => {
-      event.stopPropagation();
-      closeTab(button.dataset.closeTab);
-    });
-  });
-
-  document.querySelector("[data-new-tab]")?.addEventListener("click", () => createTab("https://www.google.com"));
-  document.querySelector("[data-toggle-secret-tab]")?.addEventListener("click", toggleActiveTabSecret);
-  document.querySelector("[data-toggle-secrets-hidden]")?.addEventListener("click", toggleSecretsHidden);
-  document.querySelector("[data-page-menu]")?.addEventListener("click", (event) => {
-    event.stopPropagation();
-    pageMenu = pageMenu ? null : true;
-    rssMenu = false;
-    mountPageMenu();
-  });
-  document.querySelector("[data-rss-menu]")?.addEventListener("click", (event) => {
-    event.stopPropagation();
-    rssMenu = !rssMenu;
-    pageMenu = false;
-    mountRssMenu();
-  });
-  document.querySelector("[data-share]")?.addEventListener("click", openShareModal);
-  document.querySelector("[data-add-chrome-extension]")?.addEventListener("click", loadChromeExtension);
-  document.querySelectorAll("[data-toggle-chrome-extension]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const extension = state.chromeExtensions.find((item) => item.id === button.dataset.toggleChromeExtension);
-      if (extension) setChromeExtensionEnabled(extension.id, !extension.enabled);
-    });
-  });
-  document.querySelectorAll("[data-remove-chrome-extension]").forEach((button) => {
-    button.addEventListener("click", () => removeChromeExtension(button.dataset.removeChromeExtension));
-  });
-  document.querySelectorAll("[data-rss-open]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const feed = rssFeedsForActiveTab()[Number(button.dataset.rssOpen)];
-      if (feed?.url) window.cookiers.openExternal(feed.url);
-      closeMenus();
-      removeFloatingMenus();
-    });
-  });
-  document.querySelector("[data-open-properties]")?.addEventListener("click", () => {
-    propertiesAppId = activeApp()?.id || null;
-    render();
-  });
-  document.querySelector("[data-external]")?.addEventListener("click", () => {
-    const tab = getActiveTab();
-    if (tab) window.cookiers.openExternal(tab.url);
-  });
-
-  document.querySelector(".address-form")?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    updateActiveTabUrl(new FormData(event.currentTarget).get("url"));
-  });
-
-  document.querySelectorAll("[data-nav]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const webview = document.querySelector("webview.active");
-      if (!webview) return;
-      const action = button.dataset.nav;
-      if (action === "back" && webview.canGoBack()) webview.goBack();
-      if (action === "forward" && webview.canGoForward()) webview.goForward();
-      if (action === "reload") webview.reload();
-    });
-  });
-
-  document.querySelectorAll("webview").forEach((webview) => {
-    webview.addEventListener("dom-ready", () => {
-      installNotificationHook(webview);
-      applyWebviewFilters(webview);
-      detectRssFeeds(webview);
-    });
-    webview.addEventListener("did-navigate", () => {
-      syncWebview(webview);
-      detectRssFeeds(webview);
-    });
-    webview.addEventListener("did-navigate-in-page", () => {
-      syncWebview(webview);
-      detectRssFeeds(webview);
-    });
-    webview.addEventListener("page-title-updated", (event) => updateWebviewTitle(webview, event.title));
-    webview.addEventListener("console-message", (event) => {
-      if (String(event.message || "").startsWith("__COOKIERS_NOTIFICATION__")) {
-        incrementNotification(webview.dataset.appId);
-      }
-    });
-  });
-
-  wireAddModal();
-  wirePropertiesModal();
-  wireWorkspaceModal();
-  wireShareModal();
-  wireContextMenu();
-  wireWorkspaceMenu();
-  wirePageMenu();
-  wireShortcuts();
-
-  document.addEventListener("click", (event) => {
-    if (!event.target.closest(".context-menu") && (contextMenu || workspaceMenu || pageMenu)) {
-      closeMenus();
-      render();
-    }
-  }, { once: true });
-}
-
-function wireShortcuts() {
-  document.onkeydown = (event) => {
-    if (!state.shortcutsEnabled) return;
-    const mod = event.metaKey || event.ctrlKey;
-    if (!mod) return;
-    const number = Number(event.key);
-    if (number >= 1 && number <= 9 && state.workspaces[number - 1]) {
-      event.preventDefault();
-      selectWorkspace(state.workspaces[number - 1].id);
-    }
-    if (event.key === "ArrowLeft" && event.altKey) {
-      event.preventDefault();
-      selectWorkspaceByOffset(-1);
-    }
-    if (event.key === "ArrowRight" && event.altKey) {
-      event.preventDefault();
-      selectWorkspaceByOffset(1);
-    }
-    if (event.shiftKey && event.key.toLowerCase() === "s") {
-      event.preventDefault();
-      toggleActiveTabSecret();
-    }
-    if (event.shiftKey && event.key.toLowerCase() === "h") {
-      event.preventDefault();
-      toggleSecretsHidden();
-    }
-  };
-}
-
-function wireAddModal() {
-  const modal = document.getElementById("add-modal");
-  document.querySelectorAll("[data-open-modal]").forEach((button) => button.addEventListener("click", () => modal.classList.add("open")));
-  document.querySelector("[data-close-add-modal]")?.addEventListener("click", () => modal.classList.remove("open"));
-  modal?.addEventListener("click", (event) => {
-    if (event.target === modal) modal.classList.remove("open");
-  });
-  modal?.querySelector("form").addEventListener("submit", (event) => {
-    event.preventDefault();
-    const formData = new FormData(event.currentTarget);
-    addCustomApp({ name: formData.get("name"), url: formData.get("url") });
-  });
-}
-
-function wirePropertiesModal() {
-  const modal = document.getElementById("properties-modal");
-  if (!modal || !propertiesAppId) return;
-  modal.addEventListener("click", (event) => {
-    if (event.target === modal) {
-      propertiesAppId = null;
-      render();
-    }
-  });
-  document.querySelector("[data-close-properties]")?.addEventListener("click", () => {
-    propertiesAppId = null;
-    render();
-  });
-  document.querySelector("[data-delete-app]")?.addEventListener("click", (event) => deleteApp(event.currentTarget.dataset.deleteApp));
-  document.querySelector("[data-upload-app-icon]")?.addEventListener("change", (event) => {
-    readIconUpload(event.target.files?.[0], (dataUrl) => {
-      const app = findApp(event.target.dataset.uploadAppIcon);
-      if (!app) return;
-      app.iconImage = dataUrl;
-      saveState();
-      render();
-    });
-  });
-  modal.querySelector("form").addEventListener("submit", (event) => {
-    event.preventDefault();
-    updateAppProperties(propertiesAppId, new FormData(event.currentTarget));
-  });
-}
-
-function wireWorkspaceModal() {
-  const modal = document.getElementById("workspace-modal");
-  if (!modal || !propertiesWorkspaceId) return;
-  modal.addEventListener("click", (event) => {
-    if (event.target === modal) {
-      propertiesWorkspaceId = null;
-      render();
-    }
-  });
-  document.querySelector("[data-close-workspace]")?.addEventListener("click", () => {
-    propertiesWorkspaceId = null;
-    render();
-  });
-  document.querySelector("[data-upload-workspace-icon]")?.addEventListener("change", (event) => {
-    readIconUpload(event.target.files?.[0], (dataUrl) => {
-      const workspace = findWorkspace(event.target.dataset.uploadWorkspaceIcon);
-      if (!workspace) return;
-      workspace.iconImage = dataUrl;
-      saveState();
-      render();
-    });
-  });
-  modal.querySelector("form").addEventListener("submit", (event) => {
-    event.preventDefault();
-    updateWorkspaceProperties(propertiesWorkspaceId, new FormData(event.currentTarget));
-  });
-}
-
-function wireShareModal() {
-  const modal = document.getElementById("share-modal");
-  if (!modal) return;
-  document.querySelector("[data-close-share]")?.addEventListener("click", () => {
-    shareDraft = null;
-    modal.remove();
-  });
-  modal.addEventListener("click", (event) => {
-    if (event.target === modal) {
-      shareDraft = null;
-      modal.remove();
-    }
-  });
-  document.querySelectorAll("[data-share-target]").forEach((button) => button.addEventListener("click", () => shareTo(button.dataset.shareTarget)));
-}
-
-function wireContextMenu() {
-  document.querySelectorAll("[data-context-action]").forEach((button) => {
-    button.addEventListener("click", () => {
-      if (!contextMenu) return;
-      const app = findApp(contextMenu.appId);
-      const action = button.dataset.contextAction;
-      if (action === "open") selectApp(contextMenu.appId);
-      if (action === "new-tab") createTab(app.url);
-      if (action === "secret-tab") createTab(app.url, true);
-      if (action === "properties") {
-        propertiesAppId = contextMenu.appId;
-        closeMenus();
-        render();
-      }
-      if (action === "duplicate") duplicateApp(contextMenu.appId);
-      if (action === "notifications") {
-        app.notifications = !app.notifications;
-        saveState();
-        closeMenus();
-        render();
-      }
-      if (action === "hidden") toggleAppHidden(contextMenu.appId);
-      if (action === "clear-count") {
-        app.notificationCount = 0;
-        saveState();
-        closeMenus();
-        render();
-      }
-      if (action === "delete") deleteApp(contextMenu.appId);
-    });
-  });
-}
-
-function wireWorkspaceMenu() {
-  document.querySelectorAll("[data-workspace-action]").forEach((button) => {
-    button.addEventListener("click", () => {
-      if (!workspaceMenu) return;
-      const action = button.dataset.workspaceAction;
-      if (action === "properties") {
-        propertiesWorkspaceId = workspaceMenu.workspaceId;
-        closeMenus();
-        render();
-      }
-      if (action === "previous") selectWorkspaceByOffset(-1);
-      if (action === "next") selectWorkspaceByOffset(1);
-    });
-  });
-}
-
-function wirePageMenu() {
-  document.querySelectorAll("[data-page-action]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const action = button.dataset.pageAction;
-      const webview = document.querySelector("webview.active");
-      const app = activeApp();
-      const workspace = activeWorkspace();
-      closeMenus();
-      removeFloatingMenus();
-      if (action === "back" && webview?.canGoBack()) webview.goBack();
-      if (action === "forward" && webview?.canGoForward()) webview.goForward();
-      if (action === "reload") webview?.reload();
-      if (action === "share") openShareModal();
-      if (action === "rss") {
-        rssMenu = true;
-        mountRssMenu();
-      }
-      if (action === "secret") toggleActiveTabSecret();
-      if (action === "hide-secrets") toggleSecretsHidden();
-      if (action === "mask-url") toggleMaskUrl();
-      if (action === "external") {
-        const tab = getActiveTab();
-        if (tab) window.cookiers.openExternal(tab.url);
-      }
-      if (action === "app-open" && app) selectApp(app.id);
-      if (action === "app-new-tab" && app) createTab(app.url);
-      if (action === "app-secret-tab" && app) createTab(app.url, true);
-      if (action === "properties") {
-        propertiesAppId = app?.id || null;
-        render();
-      }
-      if (action === "app-duplicate" && app) duplicateApp(app.id);
-      if (action === "app-notifications" && app) {
-        app.notifications = !app.notifications;
-        saveState();
-        render();
-      }
-      if (action === "app-hidden" && app) toggleAppHidden(app.id);
-      if (action === "app-clear-count" && app) {
-        app.notificationCount = 0;
-        saveState();
-        render();
-      }
-      if (action === "app-delete" && app) deleteApp(app.id);
-      if (action === "workspace-properties" && workspace) {
-        propertiesWorkspaceId = workspace.id;
-        render();
-      }
-      if (action === "workspace-previous") selectWorkspaceByOffset(-1);
-      if (action === "workspace-next") selectWorkspaceByOffset(1);
-      if (!["share", "rss", "secret", "hide-secrets", "mask-url", "properties", "app-notifications", "app-hidden", "app-clear-count", "app-delete", "workspace-properties", "workspace-previous", "workspace-next"].includes(action)) {
-        closeMenus();
-        removeFloatingMenus();
-      }
-    });
-  });
-}
-
-function updateWebviewTitle(webview, title) {
-  const tab = getActiveTab();
-  if (tab && webview.classList.contains("active")) {
-    tab.title = title || tab.title;
-    const app = activeApp();
-    const count = parseNotificationCount(title);
-    if (app && app.notifications) app.notificationCount = count;
-    saveState();
-    const label = document.querySelector(".tab.active .tab-title");
-    if (label) label.textContent = `${tab.secret ? "● " : ""}${tab.title}`;
+      save();
+    })();
   }
 }
 
-function syncWebview(webview) {
-  if (!webview.classList.contains("active")) return;
-  const tab = getActiveTab();
-  if (!tab) return;
-  tab.url = webview.getURL();
-  saveState();
+function syncWv(wv) {
+  const url = wv.getURL?.() || ""; if (!url) return;
+  const tab = findTabById(wv.dataset.tabId); if (!tab) return;
+  if (tab.url !== url) { tab.url = url; }
   const input = document.querySelector(".address-form input");
-  if (input) input.value = tab.url;
+  if (input && wv.classList.contains("active")) {
+    const app = activeApp();
+    input.value = (S.maskUrl || app?.maskUrl) ? hostname(url) : url;
+  }
+}
+function updateWvTitle(wv, title) {
+  const tab = findTabById(wv.dataset.tabId); if (!tab || tab.pinned) return;
+  const clean = String(title||"").replace(/^\(\d+\)\s*/,"");
+  if (tab.title !== clean) { tab.title = clean; save(); render(); }
+}
+function applyMute(wv) {
+  if (typeof wv.setAudioMuted === "function") wv.setAudioMuted(wv.dataset.muted === "true");
 }
 
-syncNativeSettings();
+// ── EVENT DELEGATION ──────────────────────────────────────────────────────────
+// One listener per event type, all routing done by data attributes.
+
+document.addEventListener("click", onClick);
+document.addEventListener("contextmenu", onContextMenu, true); // capture = avant que webview intercepte
+document.addEventListener("pointerdown", onPointerDown);       // fallback clic droit
+document.addEventListener("change", onChange);
+document.addEventListener("submit", onSubmit);
+document.addEventListener("input", onInput);
+document.addEventListener("keydown", onKeyDown);
+document.addEventListener("dragstart", onDragStart);
+document.addEventListener("dragover", onDragOver);
+document.addEventListener("drop", onDrop);
+
+function onClick(e) {
+  const t = e.target;
+
+  // ── Tab inner buttons (closest finds deepest match first) ────────────────
+  const closeTab = t.closest("[data-close-tab]");
+  if (closeTab) { doCloseTab(closeTab.dataset.closeTab); return; }
+
+  const tabMenuBtn = t.closest("[data-tab-menu]");
+  if (tabMenuBtn) {
+    const tabId = tabMenuBtn.dataset.tabMenu;
+    const rect = tabMenuBtn.getBoundingClientRect();
+    ui.activeTabId = tabId;
+    ui.menu = { kind:"tab", tabId, x: Math.min(rect.left, window.innerWidth - 440), y: rect.bottom + 6 };
+    render(); return;
+  }
+
+  const tabBtn = t.closest("[data-tab]");
+  if (tabBtn) { selectTab(tabBtn.dataset.tab); return; }
+
+  // ── Context menus ────────────────────────────────────────────────────────
+  if (t.closest(".context-menu")) {
+    // actions handled below; if no action found, keep menu open
+  } else if (ui.menu) {
+    ui.menu = null; render(); return;
+  }
+
+  // ── Tab menu actions ─────────────────────────────────────────────────────
+  const tabAct = t.closest("[data-tab-act]");
+  if (tabAct && ui.menu?.kind === "tab") {
+    const act = tabAct.dataset.tabAct;
+    const tab = findTabById(ui.menu.tabId);
+    const app = activeApp();
+    ui.menu = null;
+    if (act === "new-tab")      createTab(tab?.url);
+    if (act === "close")        doCloseTab(tab?.id);
+    if (act === "close-others") closeOtherTabs(tab?.id);
+    if (act === "close-right")  closeTabsToRight(tab?.id);
+    if (act === "open-browser") window.crokETT?.openExternal?.(tab?.url);
+    if (act === "open-window")  window.crokETT?.openNewWindow?.(tab?.url);
+    if (act === "split-right")  { S.splitOrientation="horizontal"; if (app) splitAppToPane(app.id,"right"); else render(); }
+    if (act === "split-bottom") { S.splitOrientation="vertical";   if (app) splitAppToPane(app.id,"right"); else render(); }
+    if (act === "mute")         toggleTabMuted(tab?.id);
+    if (act === "pin")          toggleTabPinned(tab?.id);
+    if (act === "rename")       renamePinnedTab(tab?.id);
+    if (act === "open-app")     createTabInApp(tabAct.dataset.appId, tab?.url);
+    return;
+  }
+
+  // ── App context menu actions ─────────────────────────────────────────────
+  const ctxAct = t.closest("[data-ctx]");
+  if (ctxAct && ui.menu?.kind === "app") {
+    const act = ctxAct.dataset.ctx;
+    const appId = ui.menu.appId;
+    ui.menu = null;
+    if (act === "open")           selectApp(appId);
+    if (act === "new-tab")        { selectApp(appId); createTab(); }
+    if (act === "secret-tab")     { selectApp(appId); createTab(null, true); }
+    if (act === "split-left")     splitAppToPane(appId, "left");
+    if (act === "split-right")    splitAppToPane(appId, "right");
+    if (act === "properties")     { ui.propertiesAppId = appId; render(); }
+    if (act === "duplicate")      duplicateApp(appId);
+    if (act === "notifications")  { const a=findApp(appId); if(a){a.notifications=!a.notifications;commit();} }
+    if (act === "hidden")         toggleAppHidden(appId);
+    if (act === "clear-count")    { const a=findApp(appId); if(a){a.notificationCount=0;commit();} }
+    if (act === "delete")         deleteApp(appId);
+    return;
+  }
+
+  // ── Workspace menu actions ───────────────────────────────────────────────
+  const wsAct = t.closest("[data-ws-act]");
+  if (wsAct && ui.menu?.kind === "workspace") {
+    const act = wsAct.dataset.wsAct;
+    const wid = ui.menu.workspaceId;
+    ui.menu = null;
+    if (act === "properties") { ui.propertiesWorkspaceId = wid; render(); }
+    if (act === "previous")   { const i=S.workspaces.findIndex(w=>w.id===S.activeWorkspaceId); selectWorkspace(S.workspaces[(i-1+S.workspaces.length)%S.workspaces.length].id); }
+    if (act === "next")       { const i=S.workspaces.findIndex(w=>w.id===S.activeWorkspaceId); selectWorkspace(S.workspaces[(i+1)%S.workspaces.length].id); }
+    return;
+  }
+
+  // ── Page menu actions ────────────────────────────────────────────────────
+  const pageAct = t.closest("[data-page-act]");
+  if (pageAct) {
+    const act = pageAct.dataset.pageAct;
+    // En split, cibler le webview qui a déclenché le menu (stocké dans ui.menu.wv)
+    const wv = ui.menu?.wv || document.querySelector("webview.active");
+    const app = activeApp();
+    ui.menu = null;
+    if (act === "back")         wv?.goBack?.();
+    if (act === "forward")      wv?.goForward?.();
+    if (act === "reload")       wv?.reload?.();
+    if (act === "share")        openShare();
+    if (act === "secret")       toggleActiveTabSecret();
+    if (act === "hide-secrets") toggleSecretsHidden();
+    if (act === "mask-url")     { S.maskUrl = !S.maskUrl; commit(); }
+    if (act === "external")     window.crokETT?.openExternal?.(activeTab()?.url);
+    if (act === "properties")   { ui.propertiesAppId = app?.id; render(); }
+    if (act === "duplicate")    app && duplicateApp(app.id);
+    if (act === "notifications"){ if(app){app.notifications=!app.notifications;commit();} }
+    if (act === "hidden")       app && toggleAppHidden(app.id);
+    if (act === "clear-count")  { if(app){app.notificationCount=0;commit();} }
+    if (act === "delete")       app && deleteApp(app.id);
+    if (act === "ws-properties"){ ui.propertiesWorkspaceId = activeWorkspace()?.id; render(); }
+    if (act === "ws-previous")  { const ws=S.workspaces; const i=ws.findIndex(w=>w.id===S.activeWorkspaceId); selectWorkspace(ws[(i-1+ws.length)%ws.length].id); }
+    if (act === "ws-next")      { const ws=S.workspaces; const i=ws.findIndex(w=>w.id===S.activeWorkspaceId); selectWorkspace(ws[(i+1)%ws.length].id); }
+    if (!["share","secret","hide-secrets","mask-url","external","properties","duplicate","notifications","hidden","clear-count","delete","ws-properties","ws-previous","ws-next"].includes(act)) render();
+    return;
+  }
+
+  // ── Nav buttons ──────────────────────────────────────────────────────────
+  const navBtn = t.closest("[data-nav]");
+  if (navBtn) {
+    const wv = document.querySelector("webview.active");
+    if (navBtn.dataset.nav === "back")    wv?.goBack?.();
+    if (navBtn.dataset.nav === "forward") wv?.goForward?.();
+    if (navBtn.dataset.nav === "reload")  wv?.reload?.();
+    return;
+  }
+
+  // ── Toolbar buttons ──────────────────────────────────────────────────────
+  if (t.closest("[data-new-tab]"))    { createTab(); return; }
+  if (t.closest("[data-share]"))      { openShare(); return; }
+  if (t.closest("[data-split-toggle]")){ toggleSplitView(); return; }
+  if (t.closest("[data-external]")) {
+    window.crokETT?.openExternal?.(activeTab()?.url); return;
+  }
+  if (t.closest("[data-page-menu-btn]")) {
+    if (ui.menu?.kind === "page") { ui.menu = null; render(); return; }
+    const btn = t.closest("[data-page-menu-btn]");
+    const rect = btn.getBoundingClientRect();
+    ui.menu = { kind:"page", x: Math.max(8, Math.min(rect.left - 240, window.innerWidth - 380)), y: rect.bottom + 8 };
+    render(); return;
+  }
+
+  // ── Sidebar ──────────────────────────────────────────────────────────────
+  const wsBtn = t.closest("[data-ws]");
+  if (wsBtn) { selectWorkspace(wsBtn.dataset.ws); return; }
+  const toggleWs = t.closest("[data-toggle-ws]");
+  if (toggleWs) { toggleWorkspaceCollapsed(toggleWs.dataset.toggleWs); return; }
+  const appBtn = t.closest("[data-ws-app]");
+  if (appBtn) {
+    const [wid, aid] = appBtn.dataset.wsApp.split(":");
+    selectApp(aid, wid); return;
+  }
+  if (t.closest("[data-add-ws]"))      { addWorkspace(); return; }
+  if (t.closest("[data-toggle-cachable]")) { S.hideCachableApps=!S.hideCachableApps; commit(); return; }
+  if (t.closest("[data-open-add]"))    { document.getElementById("add-modal")?.classList.add("open"); return; }
+
+  // ── Modals ────────────────────────────────────────────────────────────────
+  if (t.closest("[data-close-add]"))   { document.getElementById("add-modal")?.classList.remove("open"); return; }
+  if (t.closest("[data-close-props]")) { ui.propertiesAppId = null; render(); return; }
+  if (t.closest("[data-close-ws-modal]")) { ui.propertiesWorkspaceId = null; render(); return; }
+  if (t.closest("[data-close-share]")) { ui.shareDraft = null; render(); return; }
+  const shareBtn = t.closest("[data-share-to]");
+  if (shareBtn) { shareTo(shareBtn.dataset.shareTo); return; }
+  const deleteApp_ = t.closest("[data-delete-app]");
+  if (deleteApp_) { deleteApp(deleteApp_.dataset.deleteApp); return; }
+
+  // ── Settings ─────────────────────────────────────────────────────────────
+  const openSet = t.closest("[data-open-settings]");
+  if (openSet) { S.settingsOpen=true; S.settingsSection=openSet.dataset.openSettings||"general"; commit(); return; }
+  if (t.closest("[data-close-settings]")) { S.settingsOpen=false; commit(); return; }
+  const navSet = t.closest("[data-settings-nav]");
+  if (navSet) { S.settingsSection=navSet.dataset.settingsNav; render(); return; }
+  const density = t.closest("[data-density]");
+  if (density) { S.density=density.dataset.density; commit(); return; }
+  const togBtn = t.closest("[data-toggle]");
+  if (togBtn) { S[togBtn.dataset.toggle]=!S[togBtn.dataset.toggle]; syncNative(); commit(); return; }
+  if (t.closest("[data-export]"))  { exportConfig(); return; }
+  if (t.closest("[data-import]"))  { document.getElementById("import-file")?.click(); return; }
+  if (t.closest("[data-add-ext]")) { loadChromeExtension(); return; }
+  const rmExt = t.closest("[data-remove-ext]");
+  if (rmExt) { removeChromeExtension(rmExt.dataset.removeExt); return; }
+  const togExt = t.closest("[data-toggle-ext]");
+  if (togExt) { const e=S.chromeExtensions.find(e=>e.id===togExt.dataset.toggleExt); if(e) setChromeExtEnabled(e.id,!e.enabled); return; }
+}
+
+function onContextMenu(e) {
+  // App button right-click
+  const appBtn = e.target.closest("[data-ws-app]");
+  if (appBtn) {
+    e.preventDefault();
+    const [wid, aid] = appBtn.dataset.wsApp.split(":");
+    S.activeWorkspaceId = wid; S.activeAppByWorkspace[wid] = aid;
+    ui.menu = { kind:"app", appId: aid, x: e.clientX, y: e.clientY };
+    save(); render(); return;
+  }
+  // Workspace right-click
+  const wsBtn = e.target.closest("[data-ws]");
+  if (wsBtn) {
+    e.preventDefault();
+    ui.menu = { kind:"workspace", workspaceId: wsBtn.dataset.ws, x: e.clientX, y: e.clientY };
+    render(); return;
+  }
+  // Tab right-click
+  const tabBtn = e.target.closest("[data-tab]");
+  if (tabBtn) {
+    e.preventDefault();
+    ui.activeTabId = tabBtn.dataset.tab;
+    ui.menu = { kind:"tab", tabId: tabBtn.dataset.tab, x: e.clientX, y: e.clientY };
+    render(); return;
+  }
+}
+
+function onChange(e) {
+  const t = e.target;
+  const splitSel = t.closest("[data-split-select]");
+  if (splitSel) { setSplitPaneApp(splitSel.dataset.splitSelect, t.value); return; }
+  const perm = t.closest("[data-perm]");
+  if (perm) { S[perm.dataset.perm] = normPerm(t.value); syncNative(); commit(); return; }
+  const skinSel = t.closest("[data-skin-select]");
+  if (skinSel) { S.skin = t.value; commit(); return; }
+  const fontFamSel = t.closest("[data-font-family]");
+  if (fontFamSel) { S.uiFont = ["system","sans","serif","mono"].includes(t.value) ? t.value : "system"; commit(); return; }
+  if (t.id === "import-file") { importConfig(t.files?.[0]); return; }
+}
+
+function onSubmit(e) {
+  e.preventDefault();
+  const t = e.target;
+  if (t.closest("[data-add-form]"))  { addCustomApp(Object.fromEntries(new FormData(t))); document.getElementById("add-modal")?.classList.remove("open"); return; }
+  if (t.closest("[data-props-form]")){ updateAppProperties(t.dataset.appId, new FormData(t)); return; }
+  if (t.closest("[data-ws-form]"))   { updateWorkspaceProperties(t.dataset.wsId, new FormData(t)); return; }
+  if (t.closest("[data-url-form]"))  { updateActiveTabUrl(new FormData(t).get("url")); return; }
+  const splitUrl = t.closest("[data-split-url]");
+  if (splitUrl) { updateSplitPaneUrl(splitUrl.dataset.splitUrl, new FormData(t).get("url")); return; }
+  const skinForm = t.closest("[data-skin-form]");
+  if (skinForm) {
+    const fd = new FormData(t);
+    S.skin = "custom";
+    S.customSkin = { cream: String(fd.get("cream")||S.customSkin.cream), sidebar: String(fd.get("sidebar")||S.customSkin.sidebar), accent: String(fd.get("accent")||S.customSkin.accent) };
+    commit(); return;
+  }
+}
+
+function onInput(e) {
+  const t = e.target;
+  const iconSize = t.closest("[data-icon-size]");
+  if (iconSize) {
+    const kind = iconSize.dataset.iconSize;
+    if (kind === "group") S.groupIconSize = clamp(t.value, 14, 72, 22);
+    if (kind === "app")   S.appIconSize   = clamp(t.value, 12, 58, 17);
+    save(); applyChrome(); return;
+  }
+  const rangeSet = t.closest("[data-range-setting]");
+  if (rangeSet) { S[rangeSet.dataset.rangeSetting] = clamp(t.value, 80, 130, 100); save(); applyChrome(); return; }
+  const textSet = t.closest("[data-text-setting]");
+  if (textSet) { S[textSet.dataset.textSetting] = t.value; return; }
+}
+
+function onKeyDown(e) {
+  if (!S.shortcutsEnabled) return;
+  const mod = e.metaKey || e.ctrlKey;
+  if (mod) {
+    const n = Number(e.key);
+    if (n >= 1 && n <= 9 && S.workspaces[n-1]) { e.preventDefault(); selectWorkspace(S.workspaces[n-1].id); return; }
+    if (e.key === "ArrowLeft"  && e.altKey) { e.preventDefault(); const i=S.workspaces.findIndex(w=>w.id===S.activeWorkspaceId); selectWorkspace(S.workspaces[(i-1+S.workspaces.length)%S.workspaces.length].id); return; }
+    if (e.key === "ArrowRight" && e.altKey) { e.preventDefault(); const i=S.workspaces.findIndex(w=>w.id===S.activeWorkspaceId); selectWorkspace(S.workspaces[(i+1)%S.workspaces.length].id); return; }
+    if (e.shiftKey && e.key === "H")        { toggleSecretsHidden(); return; }
+    if (e.key === "t")                      { e.preventDefault(); createTab(); return; }
+    if (e.key === "w")                      { e.preventDefault(); const t=activeTab(); if(t) doCloseTab(t.id); return; }
+  }
+}
+
+function onPointerDown(e) {
+  if (e.button !== 2) return; // bouton droit uniquement
+  const tabBtn = e.target.closest("[data-tab]");
+  if (tabBtn && !e.target.closest("[data-tab-menu],[data-close-tab]")) {
+    ui.activeTabId = tabBtn.dataset.tab;
+    ui.menu = { kind:"tab", tabId: tabBtn.dataset.tab, x: e.clientX, y: e.clientY };
+    render();
+  }
+  const appBtn = e.target.closest("[data-ws-app]");
+  if (appBtn) {
+    const [wid, aid] = appBtn.dataset.wsApp.split(":");
+    S.activeWorkspaceId = wid; S.activeAppByWorkspace[wid] = aid;
+    ui.menu = { kind:"app", appId: aid, x: e.clientX, y: e.clientY };
+    save(); render();
+  }
+  const wsBtn = e.target.closest("[data-ws]");
+  if (wsBtn) {
+    ui.menu = { kind:"workspace", workspaceId: wsBtn.dataset.ws, x: e.clientX, y: e.clientY };
+    render();
+  }
+}
+
+function onDragStart(e) {
+  const ws = e.target.closest("[data-ws]");
+  if (ws) { e.dataTransfer.setData("text/crokETT-workspace", ws.dataset.ws); return; }
+  const app = e.target.closest("[data-ws-app]");
+  if (app) { const [,aid]=app.dataset.wsApp.split(":"); e.dataTransfer.setData("text/crokETT-app", aid); return; }
+}
+
+function onDragOver(e) {
+  if (e.target.closest("[data-ws], [data-ws-app], [data-ws-drop]")) e.preventDefault();
+}
+
+function onDrop(e) {
+  const wsId = e.dataTransfer.getData("text/crokETT-workspace");
+  const appId = e.dataTransfer.getData("text/crokETT-app");
+  e.preventDefault();
+
+  const wsTgt = e.target.closest("[data-ws]");
+  if (wsId && wsTgt) { moveWorkspace(wsId, wsTgt.dataset.ws); return; }
+
+  const appTgt = e.target.closest("[data-ws-app]");
+  if (appId && appTgt) { moveApp(appId, appTgt.dataset.wsApp.split(":")[1]); return; }
+
+  const dropZone = e.target.closest("[data-ws-drop]");
+  if (appId && dropZone) { moveAppToWorkspace(appId, dropZone.dataset.wsDrop); return; }
+}
+
+// ── BOOT ──────────────────────────────────────────────────────────────────────
 render();
-restoreChromeExtensions();

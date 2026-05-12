@@ -11,6 +11,11 @@ import {
 } from "./shared/validation.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Avoid macOS Keychain prompts for Chromium cookie/password storage.
+app.commandLine.appendSwitch("password-store", "basic");
+app.commandLine.appendSwitch("use-mock-keychain");
+
 let permissionPolicy = {
   notifications: "allow",
   camera: "ask",
@@ -23,6 +28,53 @@ let downloadPolicy = {
   downloadsPath: ""
 };
 const loadedExtensions = new Map();
+
+function windowOptions(overrides = {}) {
+  const base = {
+    width: 1280,
+    height: 820,
+    minWidth: 940,
+    minHeight: 620,
+    title: "CrokETT",
+    backgroundColor: "#f6f4ee",
+    titleBarStyle: process.platform === "darwin" ? "hidden" : "default",
+    trafficLightPosition: { x: 18, y: 20 },
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    }
+  };
+  return {
+    ...base,
+    ...overrides,
+    webPreferences: {
+      ...base.webPreferences,
+      ...(overrides.webPreferences || {})
+    }
+  };
+}
+
+function secureWindowOpen(win) {
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    openExternalSafely(url);
+    return { action: "deny" };
+  });
+  win.webContents.on("did-attach-webview", (_event, webContents) => {
+    webContents.setWindowOpenHandler(({ url }) => {
+      openExternalSafely(url);
+      return { action: "deny" };
+    });
+  });
+}
+
+function openExternalSafely(url) {
+  try {
+    shell.openExternal(normalizeExternalUrl(url)).catch(() => {});
+  } catch {
+    // Ignore unsafe or malformed popup URLs.
+  }
+}
 
 function permissionAllowed(permission) {
   const mapped = permission === "media" ? permissionPolicy.media : permissionPolicy[permission];
@@ -108,23 +160,14 @@ async function loadExtensionFromPath(extensionPath) {
 }
 
 function createWindow() {
-  const win = new BrowserWindow({
-    width: 1280,
-    height: 820,
-    minWidth: 940,
-    minHeight: 620,
-    title: "CookieRS",
-    backgroundColor: "#f6f4ee",
-    titleBarStyle: process.platform === "darwin" ? "hidden" : "default",
-    trafficLightPosition: { x: 18, y: 20 },
+  const win = new BrowserWindow(windowOptions({
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
-      webviewTag: true,
-      contextIsolation: true,
-      nodeIntegration: false
+      webviewTag: true
     }
-  });
+  }));
 
+  secureWindowOpen(win);
   win.loadFile(path.join(__dirname, "renderer", "index.html"));
 }
 
@@ -156,6 +199,17 @@ ipcMain.handle("open-external", async (_event, url) => {
 
 ipcMain.handle("copy-text", async (_event, text) => {
   clipboard.writeText(String(text || ""));
+});
+
+ipcMain.handle("open-new-window", async (_event, url) => {
+  const win = new BrowserWindow(windowOptions({
+    width: 1180,
+    height: 760,
+    minWidth: 720,
+    minHeight: 520
+  }));
+  secureWindowOpen(win);
+  await win.loadURL(normalizeExternalUrl(url));
 });
 
 ipcMain.handle("set-permissions", async (_event, permissions) => {
