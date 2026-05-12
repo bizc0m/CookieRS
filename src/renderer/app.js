@@ -44,7 +44,7 @@ const STARTER = {
 };
 
 // Ephemeral UI state (not persisted)
-let ui = { menu: null, propertiesAppId: null, propertiesWorkspaceId: null, shareDraft: null, activeTabId: null };
+let ui = { menu: null, propertiesAppId: null, propertiesWorkspaceId: null, shareDraft: null, activeTabId: null, toast: null };
 
 let S = loadState();
 const root = document.getElementById("app");
@@ -373,6 +373,8 @@ function updateAppProperties(appId, fd) {
 }
 function deleteApp(appId) {
   const apps = activeApps(); if (apps.length <= 1) return;
+  const app = findApp(appId);
+  if (!confirm(`Supprimer "${app?.name || appId}" ?\nCette action est irréversible.`)) return;
   S.appsByWorkspace[S.activeWorkspaceId] = apps.filter(a => a.id !== appId);
   delete S.tabsByApp[appId];
   S.activeAppByWorkspace[S.activeWorkspaceId] = S.appsByWorkspace[S.activeWorkspaceId][0]?.id || null;
@@ -457,10 +459,11 @@ function exportConfig() {
 }
 function importConfig(file) {
   if (!file) return;
+  if (!confirm("Importer ce fichier remplacera toute la configuration actuelle.\nContinuer ?")) return;
   const reader = new FileReader();
   reader.onload = () => {
     try { S = migrate(JSON.parse(String(reader.result || ""))); ui.activeTabId = null; commit(); }
-    catch { alert("JSON config invalide."); }
+    catch { showToast("Fichier JSON invalide ou corrompu.", "error"); }
   };
   reader.readAsText(file);
 }
@@ -500,6 +503,16 @@ function shareTo(target) {
   if (target === "mail") window.crokETT.openExternal(`mailto:?subject=${encodeURIComponent(ui.shareDraft.title)}&body=${encodeURIComponent(text)}`);
   if (target === "buffer") window.crokETT.openExternal(`https://buffer.com/add?text=${encodeURIComponent(text)}&url=${encodeURIComponent(ui.shareDraft.url)}`);
 }
+function showToast(msg, type = "info") {
+  const at = Date.now();
+  ui.toast = { msg, type, at };
+  render();
+  setTimeout(() => { if (ui.toast?.at === at) { ui.toast = null; render(); } }, 4000);
+}
+function renderToast() {
+  if (!ui.toast) return "";
+  return `<div class="toast toast-${esc(ui.toast.type)}" data-close-toast>${esc(ui.toast.msg)}</div>`;
+}
 function applyAdBlock(wv) {
   if (!S.adBlockEnabled) return;
   wv.insertCSS(`[id*="ad-"],[class*=" ad-"],[class^="ad-"],[class*=" ads"],iframe[src*="doubleclick"],iframe[src*="googlesyndication"],[aria-label*="advertisement" i],[aria-label*="publicité" i]{display:none!important}`).catch(()=>{});
@@ -517,7 +530,7 @@ async function loadChromeExtension() {
   try {
     const ext = await window.crokETT.chooseChromeExtension(); if (!ext) return;
     S.chromeExtensions = [...S.chromeExtensions.filter(e => e.id !== ext.id), ext]; commit();
-  } catch(e) { alert(`Extension non chargée: ${e?.message || e}`); }
+  } catch(e) { showToast(`Extension non chargée : ${e?.message || e}`, "error"); }
 }
 async function setChromeExtEnabled(id, enabled) {
   const ext = S.chromeExtensions.find(e => e.id === id); if (!ext) return;
@@ -635,7 +648,8 @@ function render() {
       <button class="icon-button" data-new-tab title="Nouvel onglet">+</button>
       <button class="icon-button" data-share title="Partager">⇪</button>
       <button class="icon-button${splitReady?" armed":""}" data-split-toggle title="Double vue">Ⅱ</button>
-      <button class="icon-button page-menu-button" data-page-menu-btn title="Menu page">☰</button>
+      <button class="icon-button page-menu-button" data-page-menu-btn title="Page">☰</button>
+      <button class="icon-button" data-appbar-menu-btn title="App & groupe">⊙</button>
       <button class="icon-button" data-open-settings="general" title="Paramètres">⚙</button>
       <button class="icon-button" data-external title="Ouvrir navigateur">↗</button>
     </div>`;
@@ -643,7 +657,7 @@ function render() {
   // Update tabbar
   root.querySelector(".tabbar").innerHTML = vtabs.map(t => `
     <button class="tab${t.id===ui.activeTabId?" active":""}${t.secret?" secret":""}${t.pinned?" pinned":""}${t.muted?" muted":""}" data-tab="${esc(t.id)}">
-      <span class="tab-title">${t.pinned?"P ":""}${t.muted?"M ":""}${t.secret?"S ":""}${esc(t.title)}</span>
+      <span class="tab-title">${t.pinned?`<span class="tab-flag tab-flag-pin" title="Épinglé">▲</span>`:""}${t.muted?`<span class="tab-flag tab-flag-mute" title="Muet">◉</span>`:""}${t.secret?`<span class="tab-flag tab-flag-secret" title="Secret">◈</span>`:""}${esc(t.title)}</span>
       <span class="tab-menu-trigger" data-tab-menu="${esc(t.id)}">⌄</span>
       <span class="tab-close" data-close-tab="${esc(t.id)}">×</span>
     </button>`).join("");
@@ -659,6 +673,8 @@ function render() {
     ${renderTabMenu(menu)}
     ${renderWorkspaceMenu(menu)}
     ${renderPageMenu(menu)}
+    ${renderAppBarMenu(menu)}
+    ${renderToast()}
   `;
 
   // Update webviews without ever detaching them from the DOM
@@ -864,7 +880,7 @@ function renderWorkspaceMenu(menu) {
 
 function renderPageMenu(menu) {
   if (menu?.kind !== "page") return "";
-  const tab = activeTab(), app = activeApp();
+  const tab = activeTab();
   const x = menu.x, y = menu.y;
   return `<div class="context-menu page-menu" style="left:${x}px;top:${y}px">
     <div class="context-label">Page</div>
@@ -876,13 +892,21 @@ function renderPageMenu(menu) {
     <button data-page-act="hide-secrets">${S.secretsHidden?"Afficher secrets":"Cacher secrets"}</button>
     <button data-page-act="mask-url">${S.maskUrl?"Afficher URL":"Masquer URL"}</button>
     <button data-page-act="external">Ouvrir navigateur</button>
+  </div>`;
+}
+
+function renderAppBarMenu(menu) {
+  if (menu?.kind !== "appbar") return "";
+  const app = activeApp();
+  const x = menu.x, y = menu.y;
+  return `<div class="context-menu appbar-menu" style="left:${x}px;top:${y}px">
     <div class="context-label">App</div>
-    <button data-page-act="properties">Propriétés app</button>
-    <button data-page-act="duplicate">Dupliquer app</button>
+    <button data-page-act="properties">Propriétés</button>
+    <button data-page-act="duplicate">Dupliquer</button>
     <button data-page-act="notifications">${app?.notifications?"Couper notifs":"Activer notifs"}</button>
-    <button data-page-act="hidden">${app?.hidden?"Afficher app":"Cacher app"}</button>
+    <button data-page-act="hidden">${app?.hidden?"Afficher":"Cacher"}</button>
     <button data-page-act="clear-count">Reset compteur</button>
-    <button data-page-act="delete" class="danger-text">Supprimer app</button>
+    <button data-page-act="delete" class="danger-text">Supprimer</button>
     <div class="context-label">Groupe</div>
     <button data-page-act="ws-properties">Propriétés groupe</button>
     <button data-page-act="ws-previous">Groupe précédent</button>
@@ -1091,6 +1115,8 @@ function wireWebviews() {
     if (wv.__wired) return;
     wv.__wired = true;
 
+    wv.addEventListener("did-start-loading", () => { if (wv.classList.contains("active")) root.querySelector(".browser")?.classList.add("loading"); });
+    wv.addEventListener("did-stop-loading",  () => { if (wv.classList.contains("active")) root.querySelector(".browser")?.classList.remove("loading"); });
     wv.addEventListener("did-navigate", () => syncWv(wv));
     wv.addEventListener("did-navigate-in-page", () => syncWv(wv));
     wv.addEventListener("page-title-updated", e => updateWvTitle(wv, e.title));
@@ -1184,6 +1210,9 @@ function onClick(e) {
 
   const tabBtn = t.closest("[data-tab]");
   if (tabBtn) { selectTab(tabBtn.dataset.tab); return; }
+
+  // ── Toast dismiss ────────────────────────────────────────────────────────
+  if (t.closest("[data-close-toast]")) { ui.toast = null; render(); return; }
 
   // ── Context menus ────────────────────────────────────────────────────────
   if (t.closest(".context-menu")) {
@@ -1296,7 +1325,14 @@ function onClick(e) {
     if (ui.menu?.kind === "page") { ui.menu = null; render(); return; }
     const btn = t.closest("[data-page-menu-btn]");
     const rect = btn.getBoundingClientRect();
-    ui.menu = { kind:"page", x: Math.max(8, Math.min(rect.left - 240, window.innerWidth - 380)), y: rect.bottom + 8 };
+    ui.menu = { kind:"page", x: Math.max(8, Math.min(rect.left - 180, window.innerWidth - 300)), y: rect.bottom + 8 };
+    render(); return;
+  }
+  if (t.closest("[data-appbar-menu-btn]")) {
+    if (ui.menu?.kind === "appbar") { ui.menu = null; render(); return; }
+    const btn = t.closest("[data-appbar-menu-btn]");
+    const rect = btn.getBoundingClientRect();
+    ui.menu = { kind:"appbar", x: Math.max(8, Math.min(rect.left - 160, window.innerWidth - 280)), y: rect.bottom + 8 };
     render(); return;
   }
 
