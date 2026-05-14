@@ -1,4 +1,4 @@
-# CookieRS
+# CookieRS go (New Build) CrockETT V2 
 
 CookieRS est un navigateur desktop open source inspiré du workflow Biscuit : apps web dans une sidebar, workspaces séparés, onglets par app et barre d'adresse visible.
 
